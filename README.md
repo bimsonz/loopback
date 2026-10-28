@@ -1,9 +1,15 @@
-# Loopback
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="" width="96" height="96">
+</p>
 
-A human-in-the-loop inbox for coding agents.
+<h1 align="center">Loopback</h1>
 
-[![CI](https://github.com/bimsonz/loopback/actions/workflows/ci.yml/badge.svg)](https://github.com/bimsonz/loopback/actions/workflows/ci.yml)
-[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+<p align="center">A human-in-the-loop inbox for coding agents.</p>
+
+<p align="center">
+  <a href="https://github.com/bimsonz/loopback/actions/workflows/ci.yml"><img src="https://github.com/bimsonz/loopback/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue.svg" alt="Licence: MIT"></a>
+</p>
 
 When an agent needs a decision, a preference or your sign-off, it asks through Loopback instead of
 guessing, or stopping in a terminal you are not watching. The ask appears in a live web inbox. You
