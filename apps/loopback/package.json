@@ -1,0 +1,51 @@
+{
+	"name": "loopback",
+	"version": "0.2.0",
+	"private": true,
+	"description": "The deployable Loopback Worker: the server, composed with the token gate, and the web inbox.",
+	"homepage": "https://github.com/bimsonz/loopback/tree/main/apps/loopback#readme",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bimsonz/loopback.git",
+		"directory": "apps/loopback"
+	},
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite build && vite preview",
+		"deploy": "cf deploy",
+		"types": "cf workers types",
+		"typecheck": "pnpm types && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.worker.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@cloudflare/kumo": "catalog:",
+		"@effect/atom-react": "catalog:",
+		"@loopbackhq/sdk": "workspace:*",
+		"@loopbackhq/server": "workspace:*",
+		"@phosphor-icons/react": "catalog:",
+		"effect": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"react-markdown": "catalog:",
+		"remark-gfm": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:",
+		"@tailwindcss/vite": "catalog:",
+		"@testing-library/jest-dom": "catalog:",
+		"@testing-library/react": "catalog:",
+		"@testing-library/user-event": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"cf": "catalog:",
+		"jsdom": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	}
+}

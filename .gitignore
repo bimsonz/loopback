@@ -1,0 +1,19 @@
+node_modules/
+coverage/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+.cloudflare/
+*.tsbuildinfo
+.DS_Store
+
+# local tooling
+.claude/
+.mcp.json
+.idea/
+.vscode/*
+!.vscode/extensions.json

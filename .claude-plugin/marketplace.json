@@ -1,0 +1,12 @@
+{
+	"name": "loopback",
+	"owner": { "name": "Loopback" },
+	"description": "Claude Code plugins for Loopback, the human-in-the-loop inbox for coding agents.",
+	"plugins": [
+		{
+			"name": "loopback",
+			"source": "./integrations/claude-code",
+			"description": "Routes every question the agent has for you to your Loopback inbox, with no prompting."
+		}
+	]
+}

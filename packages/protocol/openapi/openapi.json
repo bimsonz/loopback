@@ -1,0 +1,1492 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Loopback",
+    "description": "Loopback puts what an agent needs from a person in front of them and hands the reply back.\n\nAn agent asks over MCP; a person answers through this API, usually from the web inbox. Live updates\narrive over the WebSocket at `/api/v1/events`, which sends a `SnapshotEvent` and then `AskEvent`s.",
+    "version": "0.0.0"
+  },
+  "tags": [],
+  "paths": {
+    "/asks": {
+      "get": {
+        "operationId": "Asks_list",
+        "description": "Closed asks, newest first, for paging back through history.",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "description": "Only asks closed before this moment.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "explode": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "explode": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/asks/{id}": {
+      "get": {
+        "operationId": "Asks_read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ask"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/asks/{id}/reply": {
+      "post": {
+        "operationId": "Asks_reply",
+        "description": "Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, and with\n422 when the reply does not fit: `answered` is for questions and needs a choice or text, with\nchoices among those offered and only one unless several are allowed; `approved` and\n`changes_requested` are for reviews.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ask"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current state of the server.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reply"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/events/tickets": {
+      "post": {
+        "operationId": "EventTickets_issue",
+        "description": "A one-time pass onto the event socket, `/api/v1/events`.",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "The request has succeeded and a new resource has been created as a result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTicket"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/files/{uploadId}": {
+      "get": {
+        "operationId": "Files_read",
+        "description": "An uploaded image.",
+        "parameters": [
+          {
+            "name": "uploadId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "contentMediaType": "image/png"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "contentMediaType": "image/jpeg"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "contentMediaType": "image/webp"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "contentMediaType": "image/gif"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/snapshot": {
+      "get": {
+        "operationId": "Snapshots_read",
+        "description": "Every open ask and the fifty most recently closed: what an inbox starts from.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/uploads/{spaceId}/{token}": {
+      "put": {
+        "operationId": "Uploads_store",
+        "description": "Store an image against an upload ticket. The URL is the credential: it works once, for\nfifteen minutes, for the declared content type, up to the ticket's `maxBytes`.",
+        "parameters": [
+          {
+            "name": "spaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The request has succeeded and a new resource has been created as a result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadReceipt"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The server cannot find the requested resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Client error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "*/*": {
+              "schema": {
+                "contentMediaType": "*/*"
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/whoami": {
+      "get": {
+        "operationId": "Session_whoami",
+        "description": "The space the credentials open.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Whoami"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access is unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentEntry": {
+        "type": "object",
+        "required": [
+          "author",
+          "answer",
+          "at"
+        ],
+        "properties": {
+          "author": {
+            "type": "string",
+            "enum": [
+              "agent"
+            ]
+          },
+          "answer": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "An answer the agent gave to a question asked back."
+      },
+      "Answered": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "selected"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "answered"
+            ]
+          },
+          "selected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "An answer to a question: the choices picked, words of their own, or both."
+      },
+      "Approved": {
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "approved"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A review approved, with an optional note."
+      },
+      "Ask": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/QuestionAsk"
+          },
+          {
+            "$ref": "#/components/schemas/ReviewAsk"
+          }
+        ],
+        "description": "Something an agent needs from a person: a short thread that ends with a reply."
+      },
+      "AskCommon": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "waiting",
+          "thread",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AskStatus"
+          },
+          "waiting": {
+            "type": "boolean",
+            "description": "Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."
+          },
+          "project": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string",
+            "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "thread": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "description": "Every turn after the ask was opened, oldest first."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "What every ask carries, whatever its kind."
+      },
+      "AskEvent": {
+        "type": "object",
+        "required": [
+          "type",
+          "ask"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "ask.opened",
+              "ask.updated"
+            ]
+          },
+          "ask": {
+            "$ref": "#/components/schemas/Ask"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "An ask was opened, or changed: a new turn, a close, or an agent starting or stopping following it."
+      },
+      "AskKind": {
+        "type": "string",
+        "enum": [
+          "question",
+          "review"
+        ],
+        "description": "What an agent is asking for: an answer to a question, or a verdict on something it produced."
+      },
+      "AskPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ask"
+            }
+          },
+          "nextBefore": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Pass as `before` for the next page. Absent on the last page."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A page of closed asks, newest first."
+      },
+      "AskStatus": {
+        "type": "string",
+        "enum": [
+          "awaiting_human",
+          "awaiting_agent",
+          "closed"
+        ],
+        "description": "Where an ask stands. While it is open, it is either the person's move or the agent's."
+      },
+      "Block": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MarkdownBlock"
+          },
+          {
+            "$ref": "#/components/schemas/CodeBlock"
+          },
+          {
+            "$ref": "#/components/schemas/DiffBlock"
+          },
+          {
+            "$ref": "#/components/schemas/ImageBlock"
+          }
+        ],
+        "description": "One piece of what is shown to the person."
+      },
+      "ChangesRequested": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "feedback"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "changes_requested"
+            ]
+          },
+          "feedback": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A review sent back with feedback."
+      },
+      "Choice": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A choice offered with a question."
+      },
+      "CodeBlock": {
+        "type": "object",
+        "required": [
+          "type",
+          "code"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "code"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "description": "A language name the highlighter knows, such as `ts` or `python`."
+          },
+          "filename": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Source code, shown highlighted."
+      },
+      "DiffBlock": {
+        "type": "object",
+        "required": [
+          "type",
+          "diff"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "diff"
+            ]
+          },
+          "diff": {
+            "type": "string",
+            "minLength": 1
+          },
+          "filename": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A unified diff, as `git diff` prints it."
+      },
+      "Dismissed": {
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "dismissed"
+            ]
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Declined without an answer."
+      },
+      "Entry": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/HumanEntry"
+          },
+          {
+            "$ref": "#/components/schemas/AgentEntry"
+          }
+        ],
+        "description": "One turn in an ask's thread after it was opened."
+      },
+      "EventTicket": {
+        "type": "object",
+        "required": [
+          "ticket",
+          "expiresAt"
+        ],
+        "properties": {
+          "ticket": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A one-time pass onto the event socket, for a client that cannot send headers there, as a browser\ncannot. Offer it as the subprotocol `loopback.ticket.<ticket>` alongside `loopback.v1`. It works\nonce, within a minute, so a copy that turns up in a log is of no use to anyone."
+      },
+      "FollowUp": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "question"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "follow_up"
+            ]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A question asked back before deciding. The ask stays open until the agent answers."
+      },
+      "FollowUpInput": {
+        "type": "object",
+        "required": [
+          "askId",
+          "answer"
+        ],
+        "properties": {
+          "askId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The answer, as markdown."
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "description": "Anything new to look at alongside the answer."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "The agent's answer to a question the person asked back, with its content at most 256 KiB."
+      },
+      "HumanEntry": {
+        "type": "object",
+        "required": [
+          "author",
+          "reply",
+          "at"
+        ],
+        "properties": {
+          "author": {
+            "type": "string",
+            "enum": [
+              "human"
+            ]
+          },
+          "reply": {
+            "$ref": "#/components/schemas/Reply"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A reply the person gave."
+      },
+      "ImageBlock": {
+        "type": "object",
+        "required": [
+          "type",
+          "uploadId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "image"
+            ]
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "caption": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "An image uploaded beforehand through an upload ticket."
+      },
+      "ImageType": {
+        "type": "string",
+        "enum": [
+          "image/png",
+          "image/jpeg",
+          "image/webp",
+          "image/gif"
+        ],
+        "description": "Image formats an agent may upload for a review."
+      },
+      "InboxLink": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Where the person reads and answers everything agents ask."
+      },
+      "InboxRequest": {
+        "type": "object",
+        "properties": {
+          "askId": {
+            "type": "string",
+            "description": "An ask to open directly. Leave it out for the inbox itself."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A request for the address of the person's inbox."
+      },
+      "MarkdownBlock": {
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "markdown"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Prose, copy or a plan, as GitHub-flavoured markdown."
+      },
+      "Problem": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "A stable, machine-readable reason, such as `ask.closed`."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Why a request was refused."
+      },
+      "QuestionAsk": {
+        "type": "object",
+        "required": [
+          "kind",
+          "prompt",
+          "id",
+          "status",
+          "waiting",
+          "thread",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question"
+            ]
+          },
+          "prompt": {
+            "$ref": "#/components/schemas/QuestionPrompt"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AskStatus"
+          },
+          "waiting": {
+            "type": "boolean",
+            "description": "Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."
+          },
+          "project": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string",
+            "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "thread": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "description": "Every turn after the ask was opened, oldest first."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A question an agent asked."
+      },
+      "QuestionInput": {
+        "type": "object",
+        "required": [
+          "question",
+          "project"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The question, as markdown."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "minItems": 2,
+            "maxItems": 6,
+            "description": "Between two and six choices, offered as buttons."
+          },
+          "multiple": {
+            "type": "boolean",
+            "description": "Whether the person may pick more than one choice."
+          },
+          "context": {
+            "type": "string",
+            "description": "Background the person needs to answer, as markdown."
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A question for the person, with optional choices. They may always answer in their own words. All\nof it together may be at most 256 KiB."
+      },
+      "QuestionPrompt": {
+        "type": "object",
+        "required": [
+          "question",
+          "options",
+          "multiple"
+        ],
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            }
+          },
+          "multiple": {
+            "type": "boolean"
+          },
+          "context": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A question as it is shown to the person."
+      },
+      "Reply": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Answered"
+          },
+          {
+            "$ref": "#/components/schemas/Approved"
+          },
+          {
+            "$ref": "#/components/schemas/ChangesRequested"
+          },
+          {
+            "$ref": "#/components/schemas/FollowUp"
+          },
+          {
+            "$ref": "#/components/schemas/Dismissed"
+          }
+        ],
+        "description": "What a person replies. Every outcome except `follow_up` closes the ask."
+      },
+      "ReviewAsk": {
+        "type": "object",
+        "required": [
+          "kind",
+          "prompt",
+          "id",
+          "status",
+          "waiting",
+          "thread",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "review"
+            ]
+          },
+          "prompt": {
+            "$ref": "#/components/schemas/ReviewPrompt"
+          },
+          "revises": {
+            "type": "string",
+            "description": "The id of the review this one revises."
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AskStatus"
+          },
+          "waiting": {
+            "type": "boolean",
+            "description": "Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."
+          },
+          "project": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string",
+            "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "thread": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "description": "Every turn after the ask was opened, oldest first."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Work an agent put up for review."
+      },
+      "ReviewInput": {
+        "type": "object",
+        "required": [
+          "title",
+          "content",
+          "project"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "minItems": 1,
+            "description": "What is being reviewed, in order."
+          },
+          "summary": {
+            "type": "string",
+            "description": "What changed, or what to look at."
+          },
+          "revises": {
+            "type": "string",
+            "description": "The id of the review this one revises, after changes were requested."
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Work put in front of the person for approval or feedback. All of it together may be at most\n256 KiB: show the part that matters, or split it into several reviews."
+      },
+      "ReviewPrompt": {
+        "type": "object",
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            }
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A review as it is shown to the person."
+      },
+      "ServerEvent": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SnapshotEvent"
+          },
+          {
+            "$ref": "#/components/schemas/AskEvent"
+          }
+        ],
+        "description": "A frame on the event socket."
+      },
+      "Snapshot": {
+        "type": "object",
+        "required": [
+          "open",
+          "recent"
+        ],
+        "properties": {
+          "open": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ask"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ask"
+            }
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Open asks, newest first, and the most recently closed."
+      },
+      "SnapshotEvent": {
+        "type": "object",
+        "required": [
+          "type",
+          "snapshot"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/Snapshot"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "The first frame on the event socket, and the state to start from."
+      },
+      "ToolReply": {
+        "type": "object",
+        "required": [
+          "askId",
+          "reply"
+        ],
+        "properties": {
+          "askId": {
+            "type": "string"
+          },
+          "reply": {
+            "$ref": "#/components/schemas/Reply"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "What a blocking MCP tool returns: the reply that ended its wait."
+      },
+      "UploadReceipt": {
+        "type": "object",
+        "required": [
+          "uploadId",
+          "contentType",
+          "size"
+        ],
+        "properties": {
+          "uploadId": {
+            "type": "string"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ImageType"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A stored upload."
+      },
+      "UploadRequest": {
+        "type": "object",
+        "required": [
+          "contentType"
+        ],
+        "properties": {
+          "contentType": {
+            "$ref": "#/components/schemas/ImageType"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A request for somewhere to upload an image."
+      },
+      "UploadTicket": {
+        "type": "object",
+        "required": [
+          "uploadId",
+          "uploadUrl",
+          "expiresAt",
+          "maxBytes",
+          "command"
+        ],
+        "properties": {
+          "uploadId": {
+            "type": "string"
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "Send the image here with `PUT` and its `Content-Type`. No credentials needed."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "command": {
+            "type": "string",
+            "description": "A ready-to-run command that performs the upload; replace `FILE` with the image's path."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Where to upload an image, once, before it expires."
+      },
+      "Whoami": {
+        "type": "object",
+        "required": [
+          "space"
+        ],
+        "properties": {
+          "space": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Who the caller is."
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "Bearer"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Loopback API",
+      "variables": {}
+    }
+  ]
+}

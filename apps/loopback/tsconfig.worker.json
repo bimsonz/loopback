@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		// The generated content-type switch for `Files_read` ends in a throw TypeScript can prove
+		// unreachable. Reset to the compiler default so that is a hint, not an error.
+		"allowUnreachableCode": null
+	},
+	"include": ["src/worker.ts", "cloudflare.config.ts", "vite.config.ts", ".cloudflare/types"]
+}

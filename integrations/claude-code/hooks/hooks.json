@@ -1,0 +1,39 @@
+{
+	"hooks": {
+		"SessionStart": [
+			{
+				"matcher": "startup|resume|clear|compact",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/session-context.sh\"",
+						"shell": "bash"
+					}
+				]
+			}
+		],
+		"PreToolUse": [
+			{
+				"matcher": "AskUserQuestion",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/ask-through-loopback.sh\"",
+						"shell": "bash"
+					}
+				]
+			}
+		],
+		"Stop": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/stop-if-asking.sh\"",
+						"shell": "bash"
+					}
+				]
+			}
+		]
+	}
+}

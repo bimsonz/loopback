@@ -1,0 +1,37 @@
+{
+	"name": "@loopbackhq/protocol",
+	"version": "0.2.0",
+	"private": true,
+	"description": "The Loopback API contract: the TypeSpec definition, its generated types and the OpenAPI document.",
+	"homepage": "https://github.com/bimsonz/loopback/tree/main/packages/protocol#readme",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bimsonz/loopback.git",
+		"directory": "packages/protocol"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./openapi.json": "./openapi/openapi.json"
+	},
+	"scripts": {
+		"generate": "tsp compile spec/main.tsp --config tspconfig.yaml",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@hono/zod-validator": "catalog:",
+		"@typespec/compiler": "catalog:",
+		"@typespec/http": "catalog:",
+		"@typespec/openapi": "catalog:",
+		"@typespec/openapi3": "catalog:",
+		"@typespec/streams": "catalog:",
+		"@typespec/versioning": "catalog:",
+		"hono": "catalog:",
+		"secure-json-parse": "catalog:",
+		"typescript": "catalog:",
+		"typespec-hono": "catalog:",
+		"typespec-openapi-document": "catalog:",
+		"zod": "catalog:"
+	}
+}

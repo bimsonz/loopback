@@ -1,0 +1,40 @@
+{
+	"name": "@loopbackhq/server",
+	"version": "0.2.0",
+	"private": true,
+	"description": "The Loopback server: Durable Object, HTTP API, event socket and MCP tools for Cloudflare Workers.",
+	"homepage": "https://github.com/bimsonz/loopback/tree/main/packages/server#readme",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bimsonz/loopback.git",
+		"directory": "packages/server"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"types": "cd test && cf workers types",
+		"typecheck": "pnpm types && tsc --noEmit",
+		"test": "pnpm types && vitest run"
+	},
+	"dependencies": {
+		"@effect/sql-sqlite-do": "catalog:",
+		"@hono/zod-validator": "catalog:",
+		"@loopbackhq/protocol": "workspace:*",
+		"@modelcontextprotocol/server": "catalog:",
+		"effect": "catalog:",
+		"hono": "catalog:",
+		"secure-json-parse": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-plugin": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@modelcontextprotocol/client": "catalog:",
+		"cf": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

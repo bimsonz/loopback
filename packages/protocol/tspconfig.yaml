@@ -1,0 +1,24 @@
+linter:
+  extends:
+    - "typespec-hono/recommended"
+emit:
+  - typespec-hono
+  - "@typespec/openapi3"
+  - typespec-openapi-document
+options:
+  typespec-hono:
+    # The server, its validators and runtime live with the server; the framework-free contract
+    # types live here, where clients import them.
+    emitter-output-dir: "{project-root}/../server/src/generated"
+    contracts-output-dir: "{project-root}/src/generated"
+    contracts-package: "@loopbackhq/protocol"
+    seal-object-schemas: true
+    regenerate-hint: "pnpm generate"
+  "@typespec/openapi3":
+    emitter-output-dir: "{project-root}/openapi"
+    file-type: json
+    openapi-versions:
+      - "3.1.0"
+    seal-object-schemas: true
+  typespec-openapi-document:
+    emitter-output-dir: "{project-root}/../server/src/generated"

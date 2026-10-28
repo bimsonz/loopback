@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ES2024"],
+		"types": ["@cloudflare/vitest-plugin/types"],
+		// The generated content-type switch for `Files_read` ends in a throw TypeScript can prove
+		// unreachable. Reset to the compiler default so that is a hint, not an error.
+		"allowUnreachableCode": null
+	},
+	"include": ["src", "test", "test/.cloudflare/types"]
+}

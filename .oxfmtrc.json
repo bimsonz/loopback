@@ -1,0 +1,12 @@
+{
+	"useTabs": true,
+	"tabWidth": 2,
+	"printWidth": 100,
+	"ignorePatterns": [
+		".wrangler",
+		"pnpm-lock.yaml",
+		".cloudflare",
+		"**/*.gen.ts",
+		"**/openapi/openapi.json"
+	]
+}
