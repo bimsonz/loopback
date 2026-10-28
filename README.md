@@ -78,7 +78,7 @@ secrets file and deploy with `--secrets-file` again.
 Install the plugin from this repository, then give it your deployment's URL and token:
 
 ```sh
-claude plugin install loopback@loopback --marketplace bimsonz/loopback
+claude plugin install loopback --marketplace bimsonz/loopback
 printf '{"url":"https://<your-worker>","token":"<your-token>"}' \
   | claude plugin configure loopback@loopback --values-stdin
 ```

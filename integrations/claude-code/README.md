@@ -18,7 +18,7 @@ in.
 The plugin connects Claude Code to Loopback as well, so there is nothing else to set up:
 
 ```sh
-claude plugin install loopback@loopback --marketplace bimsonz/loopback
+claude plugin install loopback --marketplace bimsonz/loopback
 printf '{"url":"https://<your-worker>","token":"<your-token>"}' \
   | claude plugin configure loopback@loopback --values-stdin
 ```
