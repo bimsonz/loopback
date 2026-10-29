@@ -16,7 +16,7 @@
 	},
 	"scripts": {
 		"types": "cd test && cf workers types",
-		"typecheck": "pnpm types && tsc --noEmit",
+		"typecheck": "pnpm types && tsc --noEmit && tsc --noEmit -p test/arch",
 		"test": "pnpm types && vitest run"
 	},
 	"dependencies": {
@@ -34,7 +34,10 @@
 		"@cloudflare/vitest-plugin": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@modelcontextprotocol/client": "catalog:",
+		"@types/node": "catalog:",
+		"archunit": "catalog:",
 		"cf": "catalog:",
+		"es-module-lexer": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	}

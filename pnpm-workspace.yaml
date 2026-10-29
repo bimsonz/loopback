@@ -17,6 +17,9 @@ catalog:
   "@effect/vitest": 4.0.6
   "@cloudflare/vitest-plugin": 1.4.9
   cf: 1.0.0-beta.24
+  archunit: 2.5.4
+  es-module-lexer: 3.0.4
+  "@types/node": 24.19.2
 
   # contract
   "@typespec/compiler": 1.17.0

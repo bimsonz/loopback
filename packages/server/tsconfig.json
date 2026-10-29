@@ -7,5 +7,7 @@
 		// unreachable. Reset to the compiler default so that is a hint, not an error.
 		"allowUnreachableCode": null
 	},
-	"include": ["src", "test", "test/.cloudflare/types"]
+	"include": ["src", "test", "test/.cloudflare/types"],
+	// The architecture rules run on Node, and are checked with its types by their own tsconfig.
+	"exclude": ["test/arch"]
 }
