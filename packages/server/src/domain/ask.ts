@@ -1,4 +1,5 @@
 import type {
+	Actor,
 	Ask,
 	AskStatus,
 	Block,
@@ -26,6 +27,8 @@ interface AskHead {
 	readonly status: AskStatus;
 	readonly project: string | null;
 	readonly client: string | null;
+	/** Whose agent asked, when the deployment's gate knows. */
+	readonly raisedBy: Actor | null;
 	readonly createdAt: string;
 	readonly updatedAt: string;
 	readonly closedAt: string | null;
@@ -90,6 +93,7 @@ export const toAsk = (record: AskRecord, thread: readonly EntryRecord[], waiting
 		updatedAt: record.updatedAt,
 		...(record.project === null ? {} : { project: record.project }),
 		...(record.client === null ? {} : { client: record.client }),
+		...(record.raisedBy === null ? {} : { raisedBy: record.raisedBy }),
 		...(record.closedAt === null ? {} : { closedAt: record.closedAt }),
 	};
 	return record.kind === "question"

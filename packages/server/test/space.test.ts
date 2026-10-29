@@ -9,6 +9,9 @@ import { AskNotFound } from "../src/domain/errors.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { PRESENCE_GRACE_MS, Presence } from "../src/space/services.ts";
 
+/** Who asks and replies in these tests, as the token gate names its one person. */
+const OWNER = { id: "owner" };
+
 const fresh = () => {
 	const stub = exports.Space.get(exports.Space.idFromName(crypto.randomUUID()));
 	return { stub, space: spaceClient(() => stub) };
@@ -35,7 +38,12 @@ describe("asks", () => {
 	it.effect("opens a question awaiting the person", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const ask = yield* space.open({ kind: "question", input: colour, client: "test 1.0" });
+			const ask = yield* space.open({
+				actor: OWNER,
+				kind: "question",
+				input: colour,
+				client: "test 1.0",
+			});
 			expect(ask).toMatchObject({
 				kind: "question",
 				status: "awaiting_human",
@@ -53,8 +61,8 @@ describe("asks", () => {
 	it.effect("hands a reply over until the agent has taken it", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const ask = yield* space.open({ kind: "question", input: colour });
-			const closed = yield* space.reply(ask.id, { outcome: "answered", selected: ["Blue"] });
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const closed = yield* space.reply(ask.id, { outcome: "answered", selected: ["Blue"] }, OWNER);
 			expect(closed.status).toBe("closed");
 			expect(closed.closedAt).toBeDefined();
 			const handed = yield* space.awaitReply(ask.id, 0);
@@ -78,6 +86,7 @@ describe("asks", () => {
 				const { space } = fresh();
 				for (let n = 0; n < 101; n += 1) {
 					yield* space.open({
+						actor: OWNER,
 						kind: "question",
 						input: { question: `Question ${n}?`, project: "loopback" },
 					});
@@ -90,11 +99,11 @@ describe("asks", () => {
 	it.live("holds a wait until the reply lands", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const ask = yield* space.open({ kind: "review", input: copy });
+			const ask = yield* space.open({ actor: OWNER, kind: "review", input: copy });
 			const waiting = yield* Effect.forkChild(space.awaitReply(ask.id, 10_000));
 			yield* Effect.sleep("200 millis");
 			expect((yield* space.get(ask.id)).waiting).toBe(true);
-			yield* space.reply(ask.id, { outcome: "approved", note: "Ship it" });
+			yield* space.reply(ask.id, { outcome: "approved", note: "Ship it" }, OWNER);
 			expect(yield* Fiber.join(waiting)).toEqual({
 				askId: ask.id,
 				reply: { outcome: "approved", note: "Ship it" },
@@ -106,7 +115,7 @@ describe("asks", () => {
 	it.effect("answers null when no reply comes in time", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const ask = yield* space.open({ kind: "question", input: colour });
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(yield* space.awaitReply(ask.id, 50)).toBeNull();
 		}),
 	);
@@ -114,11 +123,15 @@ describe("asks", () => {
 	it.effect("runs a follow-up round trip in one ask", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const ask = yield* space.open({ kind: "review", input: copy });
-			const asked = yield* space.reply(ask.id, {
-				outcome: "follow_up",
-				question: "Why this tone?",
-			});
+			const ask = yield* space.open({ actor: OWNER, kind: "review", input: copy });
+			const asked = yield* space.reply(
+				ask.id,
+				{
+					outcome: "follow_up",
+					question: "Why this tone?",
+				},
+				OWNER,
+			);
 			expect(asked.status).toBe("awaiting_agent");
 			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({
 				reply: { outcome: "follow_up", question: "Why this tone?" },
@@ -130,7 +143,7 @@ describe("asks", () => {
 			expect(answered.status).toBe("awaiting_human");
 			const again = yield* space.answerFollowUp({ askId: ask.id, answer: "It matches the docs." });
 			expect(again.thread).toHaveLength(2);
-			const approved = yield* space.reply(ask.id, { outcome: "approved" });
+			const approved = yield* space.reply(ask.id, { outcome: "approved" }, OWNER);
 			expect(approved.status).toBe("closed");
 			expect(approved.thread.map((entry) => entry.author)).toEqual(["human", "agent", "human"]);
 		}),
@@ -139,16 +152,16 @@ describe("asks", () => {
 	it.effect("refuses a reply out of turn or after closing", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const ask = yield* space.open({ kind: "review", input: copy });
-			yield* space.reply(ask.id, { outcome: "follow_up", question: "Which page?" });
-			expect(failureTag(yield* Effect.exit(space.reply(ask.id, { outcome: "approved" })))).toEqual([
-				"NotYourTurn",
-			]);
+			const ask = yield* space.open({ actor: OWNER, kind: "review", input: copy });
+			yield* space.reply(ask.id, { outcome: "follow_up", question: "Which page?" }, OWNER);
+			expect(
+				failureTag(yield* Effect.exit(space.reply(ask.id, { outcome: "approved" }, OWNER))),
+			).toEqual(["NotYourTurn"]);
 			yield* space.answerFollowUp({ askId: ask.id, answer: "The home page." });
-			yield* space.reply(ask.id, { outcome: "dismissed" });
-			expect(failureTag(yield* Effect.exit(space.reply(ask.id, { outcome: "approved" })))).toEqual([
-				"AskClosed",
-			]);
+			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
+			expect(
+				failureTag(yield* Effect.exit(space.reply(ask.id, { outcome: "approved" }, OWNER))),
+			).toEqual(["AskClosed"]);
 			expect(
 				failureTag(yield* Effect.exit(space.answerFollowUp({ askId: ask.id, answer: "More." }))),
 			).toEqual(["AskClosed"]);
@@ -158,10 +171,10 @@ describe("asks", () => {
 	it.effect("refuses replies that do not fit the ask", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const question = yield* space.open({ kind: "question", input: colour });
-			const review = yield* space.open({ kind: "review", input: copy });
+			const question = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const review = yield* space.open({ actor: OWNER, kind: "review", input: copy });
 			const refused = (askId: string, reply: Parameters<typeof space.reply>[1]) =>
-				Effect.map(Effect.exit(space.reply(askId, reply)), failureTag);
+				Effect.map(Effect.exit(space.reply(askId, reply, OWNER)), failureTag);
 			expect(yield* refused(question.id, { outcome: "answered", selected: ["Green"] })).toEqual([
 				"ReplyInvalid",
 			]);
@@ -176,11 +189,15 @@ describe("asks", () => {
 				"ReplyInvalid",
 			]);
 			expect(
-				(yield* space.reply(question.id, {
-					outcome: "answered",
-					selected: [],
-					text: "Green, please",
-				})).status,
+				(yield* space.reply(
+					question.id,
+					{
+						outcome: "answered",
+						selected: [],
+						text: "Green, please",
+					},
+					OWNER,
+				)).status,
 			).toBe("closed");
 		}),
 	);
@@ -190,14 +207,14 @@ describe("asks", () => {
 			const { space } = fresh();
 			const huge = { type: "markdown", text: "x".repeat(300 * 1024) } as const;
 			const review = yield* Effect.flip(
-				space.open({ kind: "review", input: { ...copy, content: [huge] } }),
+				space.open({ actor: OWNER, kind: "review", input: { ...copy, content: [huge] } }),
 			);
 			expect(review).toMatchObject({
 				_tag: "ContentInvalid",
 				reason: expect.stringMatching(/too large to show/),
 			});
 			const question = yield* Effect.flip(
-				space.open({ kind: "question", input: { ...colour, context: huge.text } }),
+				space.open({ actor: OWNER, kind: "question", input: { ...colour, context: huge.text } }),
 			);
 			expect(question).toMatchObject({ _tag: "ContentInvalid" });
 		}),
@@ -206,7 +223,7 @@ describe("asks", () => {
 	it.effect("notes an agent waiting at most once a minute", () =>
 		Effect.gen(function* () {
 			const { stub, space } = fresh();
-			const ask = yield* space.open({ kind: "question", input: colour });
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			const waitedAt = (at: string) =>
 				Effect.promise(() =>
 					runInDurableObject(stub, (_object, state) => {
@@ -267,12 +284,12 @@ describe("asks", () => {
 				});
 
 			refusals.push(reset());
-			const ask = yield* space.open({ kind: "question", input: colour });
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(stubs).toHaveLength(2);
 
 			// A reply is not safe to send twice: a refused one is the caller's to resend.
 			refusals.push(reset());
-			const refused = yield* Effect.exit(space.reply(ask.id, { outcome: "dismissed" }));
+			const refused = yield* Effect.exit(space.reply(ask.id, { outcome: "dismissed" }, OWNER));
 			expect(Exit.isFailure(refused) && Cause.hasDies(refused.cause)).toBe(true);
 			expect((yield* space.get(ask.id)).status).toBe("awaiting_human");
 
@@ -321,27 +338,63 @@ describe("retries", () => {
 	it.effect("rejoin the ask a dropped call opened", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const first = yield* space.open({ kind: "question", input: colour, client: "test 1.0" });
-			const retried = yield* space.open({ kind: "question", input: colour, client: "test 1.0" });
+			const first = yield* space.open({
+				actor: OWNER,
+				kind: "question",
+				input: colour,
+				client: "test 1.0",
+			});
+			const retried = yield* space.open({
+				actor: OWNER,
+				kind: "question",
+				input: colour,
+				client: "test 1.0",
+			});
 			expect(retried.id).toBe(first.id);
-			const other = yield* space.open({ kind: "question", input: colour, client: "other 2.0" });
+			const other = yield* space.open({
+				actor: OWNER,
+				kind: "question",
+				input: colour,
+				client: "other 2.0",
+			});
 			expect(other.id).not.toBe(first.id);
+		}),
+	);
+
+	it.effect("are only ever the same person's: two people asking alike get an ask each", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ada = { id: "person-1", name: "Ada" };
+			const bea = { id: "person-2", name: "Bea" };
+			const first = yield* space.open({ actor: ada, kind: "question", input: colour });
+			const second = yield* space.open({ actor: bea, kind: "question", input: colour });
+			expect(second.id).not.toBe(first.id);
+			expect(first.raisedBy).toEqual(ada);
+			expect(second.raisedBy).toEqual(bea);
+			const answered = yield* space.reply(
+				second.id,
+				{ outcome: "answered", selected: ["Red"] },
+				ada,
+			);
+			expect(answered.thread).toMatchObject([{ author: "human", by: ada }]);
 		}),
 	);
 
 	it.effect("collect a reply given while no agent was listening", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
-			const first = yield* space.open({ kind: "question", input: colour });
-			yield* space.reply(first.id, { outcome: "answered", selected: ["Red"] });
-			const retried = yield* space.open({ kind: "question", input: colour });
+			const first = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			yield* space.reply(first.id, { outcome: "answered", selected: ["Red"] }, OWNER);
+			const retried = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(retried.id).toBe(first.id);
 			const handed = yield* space.awaitReply(retried.id, 0);
 			expect(handed).toMatchObject({ reply: { outcome: "answered", selected: ["Red"] } });
 			// Until the agent takes the reply, asking again is still a retry.
-			expect((yield* space.open({ kind: "question", input: colour })).id).toBe(first.id);
+			expect((yield* space.open({ actor: OWNER, kind: "question", input: colour })).id).toBe(
+				first.id,
+			);
 			yield* space.markDelivered(retried.id, handed?.seq ?? 0);
-			const asked = yield* space.open({ kind: "question", input: colour });
+			const asked = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(asked.id).not.toBe(first.id);
 		}),
 	);
@@ -349,14 +402,14 @@ describe("retries", () => {
 	it.effect("open a fresh ask once the window has passed", () =>
 		Effect.gen(function* () {
 			const { stub, space } = fresh();
-			const first = yield* space.open({ kind: "question", input: colour });
+			const first = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			const stale = new Date(Date.now() - REATTACH_WINDOW_MS - 1000).toISOString();
 			yield* Effect.promise(() =>
 				runInDurableObject(stub, (_object, state) => {
 					state.storage.sql.exec("UPDATE asks SET last_waited_at = ?", stale);
 				}),
 			);
-			const later = yield* space.open({ kind: "question", input: colour });
+			const later = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			expect(later.id).not.toBe(first.id);
 		}),
 	);
@@ -413,13 +466,14 @@ describe("uploads", () => {
 				content: [{ type: "image", uploadId: "nope" }],
 				project: "loopback",
 			};
-			expect(failureTag(yield* Effect.exit(space.open({ kind: "review", input: shot })))).toEqual([
-				"ContentInvalid",
-			]);
+			expect(
+				failureTag(yield* Effect.exit(space.open({ actor: OWNER, kind: "review", input: shot }))),
+			).toEqual(["ContentInvalid"]);
 			const ticket = yield* space.createUpload("image/png");
 			yield* space.claimUpload(ticket.token, "image/png");
 			yield* space.completeUpload(ticket.uploadId, 10);
 			const ask = yield* space.open({
+				actor: OWNER,
 				kind: "review",
 				input: { ...shot, content: [{ type: "image", uploadId: ticket.uploadId }] },
 			});
@@ -462,15 +516,15 @@ describe("event socket", () => {
 	it.live("sends a snapshot, then every change", () =>
 		Effect.gen(function* () {
 			const { stub, space } = fresh();
-			const existing = yield* space.open({ kind: "question", input: colour });
+			const existing = yield* space.open({ actor: OWNER, kind: "question", input: colour });
 			const { socket, until } = yield* Effect.promise(() => connect(stub));
 			const [first] = yield* Effect.promise(() => until(1));
 			expect(first).toMatchObject({ type: "snapshot", snapshot: { open: [{ id: existing.id }] } });
 
-			const review = yield* space.open({ kind: "review", input: copy });
+			const review = yield* space.open({ actor: OWNER, kind: "review", input: copy });
 			const waiting = yield* Effect.forkChild(space.awaitReply(review.id, 10_000));
 			yield* Effect.sleep("200 millis");
-			yield* space.reply(review.id, { outcome: "changes_requested", feedback: "Shorter." });
+			yield* space.reply(review.id, { outcome: "changes_requested", feedback: "Shorter." }, OWNER);
 			yield* Fiber.join(waiting);
 
 			const frames = yield* Effect.promise(() => until(4));

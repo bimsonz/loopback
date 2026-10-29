@@ -68,6 +68,17 @@ export const inboxAtom = Atom.make(
 	{ initialValue: initialInbox },
 );
 
+/** Who the inbox is signed in as: the person whose replies read as "you". */
+export const meAtom = Atom.make((get) => {
+	const client = get(clientAtom);
+	return client === null
+		? Effect.succeed(undefined)
+		: client.whoami.pipe(
+				Effect.map((whoami) => whoami.actor.id),
+				Effect.catch(() => Effect.succeed(undefined)),
+			);
+});
+
 /** Checks a token before keeping it: the space it opens, or why it was refused. */
 export const signInAtom = Atom.fn((token: string) =>
 	Effect.map(clientFor(token).whoami, (whoami) => ({ token, space: whoami.space })),

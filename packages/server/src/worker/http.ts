@@ -153,7 +153,7 @@ const handlers = (runtime: WorkerRuntime, request: Request, requestId: string) =
 					(access) =>
 						({
 							status: 200,
-							body: { space: access.space },
+							body: { space: access.space, actor: access.actor },
 						}) as const,
 				),
 			),
@@ -188,8 +188,12 @@ const handlers = (runtime: WorkerRuntime, request: Request, requestId: string) =
 		Asks_reply: (caller, input) =>
 			serve(
 				Effect.gen(function* () {
+					const access = yield* accessOf(caller);
 					const space = yield* spaceOf(caller);
-					return { status: 200, body: yield* space.reply(input.id, input.reply) } as const;
+					return {
+						status: 200,
+						body: yield* space.reply(input.id, input.reply, access.actor),
+					} as const;
 				}).pipe(
 					Effect.catchTags({
 						AskNotFound: () => notFound(`No ask ${input.id}.`),

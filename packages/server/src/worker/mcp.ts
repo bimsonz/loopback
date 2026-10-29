@@ -313,6 +313,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 					const ask = yield* space.open({
 						kind: "question",
 						input,
+						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
 					return yield* settle(ctx, space, ask.id, 0, ask.createdAt);
@@ -338,6 +339,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 					const ask = yield* space.open({
 						kind: "review",
 						input,
+						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
 					return yield* settle(ctx, space, ask.id, 0, ask.createdAt);

@@ -72,8 +72,14 @@ export interface Dismissed {
 
 export type Reply = Answered | Approved | ChangesRequested | FollowUp | Dismissed;
 
+export interface Actor {
+	id: string;
+	name?: string;
+}
+
 export interface Whoami {
 	space: string;
+	actor: Actor;
 }
 
 export interface Problem {
@@ -103,6 +109,7 @@ export type AskStatus = "awaiting_human" | "awaiting_agent" | "closed";
 export interface HumanEntry {
 	author: "human";
 	reply: Reply;
+	by?: Actor;
 	at: string;
 }
 
@@ -149,6 +156,7 @@ export interface QuestionAsk {
 	waiting: boolean;
 	project?: string;
 	client?: string;
+	raisedBy?: Actor;
 	thread: Entry[];
 	createdAt: string;
 	updatedAt: string;
@@ -170,6 +178,7 @@ export interface ReviewAsk {
 	waiting: boolean;
 	project?: string;
 	client?: string;
+	raisedBy?: Actor;
 	thread: Entry[];
 	createdAt: string;
 	updatedAt: string;
@@ -246,6 +255,7 @@ export interface AskCommon {
 	waiting: boolean;
 	project?: string;
 	client?: string;
+	raisedBy?: Actor;
 	thread: Entry[];
 	createdAt: string;
 	updatedAt: string;

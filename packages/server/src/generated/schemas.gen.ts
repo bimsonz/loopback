@@ -30,8 +30,15 @@ export const problemSchema = z.strictObject({
 }).describe("Why a request was refused.");
 export type Problem = z.infer<typeof problemSchema>;
 
+export const actorSchema = z.strictObject({
+	id: z.string().describe("Stable within the deployment, as its gate names them."),
+	name: z.string().exactOptional().describe("How to show them, when the gate knows."),
+}).describe("Someone a deployment's gate recognised: a person, or the agent they authorised.");
+export type Actor = z.infer<typeof actorSchema>;
+
 export const whoamiSchema = z.strictObject({
 	space: z.string(),
+	actor: actorSchema,
 }).describe("Who the caller is.");
 export type Whoami = z.infer<typeof whoamiSchema>;
 
@@ -94,6 +101,7 @@ export type Reply = z.infer<typeof replySchema>;
 export const humanEntrySchema = z.strictObject({
 	author: z.literal("human"),
 	reply: replySchema,
+	by: actorSchema.exactOptional().describe("Who replied, when the deployment knows."),
 	at: z.iso.datetime({ offset: true }),
 }).describe("A reply the person gave.");
 export type HumanEntry = z.infer<typeof humanEntrySchema>;
@@ -148,6 +156,7 @@ export const questionAskSchema = z.strictObject({
 	waiting: z.boolean().describe("Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."),
 	project: z.string().exactOptional(),
 	client: z.string().exactOptional().describe("The MCP client that asked, such as `claude-code 2.1.0`."),
+	raisedBy: actorSchema.exactOptional().describe("Whose agent asked: the person its credential belongs to, when the deployment knows."),
 	thread: z.array(entrySchema).describe("Every turn after the ask was opened, oldest first."),
 	createdAt: z.iso.datetime({ offset: true }),
 	updatedAt: z.iso.datetime({ offset: true }),
@@ -171,6 +180,7 @@ export const reviewAskSchema = z.strictObject({
 	waiting: z.boolean().describe("Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."),
 	project: z.string().exactOptional(),
 	client: z.string().exactOptional().describe("The MCP client that asked, such as `claude-code 2.1.0`."),
+	raisedBy: actorSchema.exactOptional().describe("Whose agent asked: the person its credential belongs to, when the deployment knows."),
 	thread: z.array(entrySchema).describe("Every turn after the ask was opened, oldest first."),
 	createdAt: z.iso.datetime({ offset: true }),
 	updatedAt: z.iso.datetime({ offset: true }),
@@ -261,6 +271,7 @@ export const askCommonSchema = z.strictObject({
 	waiting: z.boolean().describe("Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."),
 	project: z.string().exactOptional(),
 	client: z.string().exactOptional().describe("The MCP client that asked, such as `claude-code 2.1.0`."),
+	raisedBy: actorSchema.exactOptional().describe("Whose agent asked: the person its credential belongs to, when the deployment knows."),
 	thread: z.array(entrySchema).describe("Every turn after the ask was opened, oldest first."),
 	createdAt: z.iso.datetime({ offset: true }),
 	updatedAt: z.iso.datetime({ offset: true }),

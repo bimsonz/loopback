@@ -462,6 +462,26 @@
   },
   "components": {
     "schemas": {
+      "Actor": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable within the deployment, as its gate names them."
+          },
+          "name": {
+            "type": "string",
+            "description": "How to show them, when the gate knows."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Someone a deployment's gate recognised: a person, or the agent they authorised."
+      },
       "AgentEntry": {
         "type": "object",
         "required": [
@@ -582,6 +602,10 @@
           "client": {
             "type": "string",
             "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "raisedBy": {
+            "$ref": "#/components/schemas/Actor",
+            "description": "Whose agent asked: the person its credential belongs to, when the deployment knows."
           },
           "thread": {
             "type": "array",
@@ -905,6 +929,10 @@
           "reply": {
             "$ref": "#/components/schemas/Reply"
           },
+          "by": {
+            "$ref": "#/components/schemas/Actor",
+            "description": "Who replied, when the deployment knows."
+          },
           "at": {
             "type": "string",
             "format": "date-time"
@@ -1060,6 +1088,10 @@
           "client": {
             "type": "string",
             "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "raisedBy": {
+            "$ref": "#/components/schemas/Actor",
+            "description": "Whose agent asked: the person its credential belongs to, when the deployment knows."
           },
           "thread": {
             "type": "array",
@@ -1217,6 +1249,10 @@
           "client": {
             "type": "string",
             "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "raisedBy": {
+            "$ref": "#/components/schemas/Actor",
+            "description": "Whose agent asked: the person its credential belongs to, when the deployment knows."
           },
           "thread": {
             "type": "array",
@@ -1462,11 +1498,15 @@
       "Whoami": {
         "type": "object",
         "required": [
-          "space"
+          "space",
+          "actor"
         ],
         "properties": {
           "space": {
             "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/Actor"
           }
         },
         "unevaluatedProperties": {

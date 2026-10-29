@@ -10,6 +10,7 @@ import { spaceClient } from "../src/space/rpc.ts";
 import { Files } from "../src/worker/files.ts";
 
 const TOKEN = env.LOOPBACK_TOKEN;
+const OWNER = { id: "owner" };
 const BASE = "https://loopback.test/api/v1";
 const space = spaceClient(() => exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE)));
 const spaceId = exports.Space.idFromName(DEFAULT_SPACE).toString();
@@ -29,6 +30,7 @@ const json = (body: unknown) => ({
 
 const question = (text: string) =>
 	space.open({
+		actor: OWNER,
 		kind: "question",
 		input: { question: text, options: [{ label: "Yes" }, { label: "No" }], project: "http-test" },
 	});
@@ -49,7 +51,7 @@ describe("the gate", () => {
 		const response = await api("/whoami");
 		expect(response.status).toBe(200);
 		expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-		expect(await response.json()).toEqual({ space: DEFAULT_SPACE });
+		expect(await response.json()).toEqual({ space: DEFAULT_SPACE, actor: { id: "owner" } });
 	});
 
 	const authenticateWith = (secret: string, presented = secret) =>
@@ -92,7 +94,10 @@ describe("an invoker that vouches for its caller", () => {
 	it("opens the space it names, with no token", async () => {
 		const response = await env.VOUCHED.fetch(`${BASE}/whoami`);
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ space: "vouched" });
+		expect(await response.json()).toEqual({
+			space: "vouched",
+			actor: { id: "person-1", name: "Ada" },
+		});
 	});
 
 	it("is believed on the event socket too, with no ticket", async () => {

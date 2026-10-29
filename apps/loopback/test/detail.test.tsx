@@ -176,3 +176,46 @@ describe("an ask that is not the person's move", () => {
 		).toBeInTheDocument();
 	});
 });
+
+describe("a space people share", () => {
+	beforeEach(() => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+			if (url.endsWith("/api/v1/whoami")) {
+				return Response.json({ space: "acme", actor: { id: "person-1", name: "Ada" } });
+			}
+			return new Response(null, { status: 404 });
+		});
+	});
+
+	it("says whose agent asked, and who replied, naming only other people", async () => {
+		show({
+			...review,
+			status: "awaiting_human",
+			raisedBy: { id: "person-2", name: "Bea" },
+			thread: [
+				{
+					author: "human",
+					reply: { outcome: "follow_up", question: "Which page?" },
+					by: { id: "person-3", name: "Cal" },
+					at: "2026-10-27T10:01:00.000Z",
+				},
+				{ author: "agent", answer: "The pricing page.", at: "2026-10-27T10:02:00.000Z" },
+				{
+					author: "human",
+					reply: { outcome: "changes_requested", feedback: "Shorter." },
+					by: { id: "person-1", name: "Ada" },
+					at: "2026-10-27T10:03:00.000Z",
+				},
+			],
+		});
+		expect(await screen.findByText(/Bea's agent/)).toBeTruthy();
+		expect(screen.getByText(/Cal asked/)).toBeTruthy();
+		await waitFor(() => expect(screen.getByText(/You asked for changes/)).toBeTruthy());
+	});
+
+	it("does not name the person reading as the one whose agent asked", async () => {
+		show({ ...question, raisedBy: { id: "person-1", name: "Ada" } });
+		await waitFor(() => expect(screen.queryByText(/Ada's agent/)).toBeNull());
+	});
+});

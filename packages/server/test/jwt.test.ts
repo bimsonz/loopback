@@ -2,6 +2,8 @@ import type { Snapshot } from "@loopbackhq/protocol";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
+import type { Ask } from "@loopbackhq/protocol";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { Effect } from "effect";
 import { exportJWK, generateKeyPair, SignJWT, UnsecuredJWT } from "jose";
 import { ConfiguredGate, createLoopback, jwtGate, type JwtGateOptions } from "../src/index.ts";
@@ -12,6 +14,7 @@ const BASE = `${ORIGIN}/api/v1`;
 const ISSUER = "https://login.test";
 const AUDIENCE = `${ORIGIN}/mcp`;
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
+const OWNER = { id: "owner" };
 
 const login = await generateKeyPair("EdDSA", { extractable: true });
 const stranger = await generateKeyPair("EdDSA", { extractable: true });
@@ -24,7 +27,7 @@ const token = (
 		key = login.privateKey,
 		issuer = ISSUER,
 		audience = AUDIENCE,
-		expires = "5m",
+		expires = "5m" as string | number,
 		subject = "person-1" as string | null,
 	} = {},
 ) => {
@@ -71,6 +74,7 @@ const call = async (
 const ask = (space: string, text: string) =>
 	Effect.runPromise(
 		spaceClient(() => exports.Space.getByName(space)).open({
+			actor: OWNER,
 			kind: "question",
 			input: { question: text, options: [{ label: "Yes" }, { label: "No" }], project: "jwt-test" },
 		}),
@@ -82,7 +86,10 @@ describe("a JWT-gated deployment", () => {
 	it("opens the space the token's claim names, as the person its subject names", async () => {
 		const response = await call(app, "/api/v1/whoami", { bearer: await token() });
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ space: "acme" });
+		expect(await response.json()).toEqual({
+			space: "acme",
+			actor: { id: "person-1", name: "Ada" },
+		});
 	});
 
 	it("refuses a request without a token, pointing MCP clients at its resource metadata", async () => {
@@ -195,6 +202,54 @@ describe("a JWT-gated deployment", () => {
 		socket.webSocket?.close();
 	});
 
+	it("records whose agent asked and who answered, for a space two people share", async () => {
+		const settings = { ...env };
+		const client = new Client({ name: "ada-agent", version: "1.0.0" });
+		await client.connect(
+			new StreamableHTTPClientTransport(new URL(`${ORIGIN}/mcp`), {
+				fetch: async (url, init) => {
+					const ctx = createExecutionContext();
+					return app.fetch(new Request(url, init), settings, ctx);
+				},
+				requestInit: {
+					headers: { Authorization: `Bearer ${await token({ workspace: "shared" })}` },
+				},
+			}),
+		);
+		const answered = client.callTool({
+			name: "ask_question",
+			arguments: {
+				question: "Which colour?",
+				options: [{ label: "Red" }, { label: "Blue" }],
+				project: "jwt-test",
+			},
+		});
+
+		const shared = spaceClient(() => exports.Space.getByName("shared"));
+		let opened: Ask | undefined;
+		for (let attempt = 0; opened === undefined && attempt < 100; attempt += 1) {
+			opened = (await Effect.runPromise(shared.snapshot())).open.find(
+				(item) => item.kind === "question" && item.prompt.question === "Which colour?",
+			);
+			if (opened === undefined) await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+		if (opened === undefined) throw new Error("The ask never opened.");
+		expect(opened.raisedBy).toEqual({ id: "person-1", name: "Ada" });
+
+		const bea = await token({ workspace: "shared", name: "Bea" }, { subject: "person-2" });
+		const replied = await call(app, `/api/v1/asks/${opened.id}/reply`, {
+			bearer: bea,
+			method: "POST",
+			body: JSON.stringify({ outcome: "answered", selected: ["Red"] }),
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(replied.status).toBe(200);
+		await answered;
+		const thread = (await Effect.runPromise(shared.get(opened.id))).thread;
+		expect(thread).toMatchObject([{ author: "human", by: { id: "person-2", name: "Bea" } }]);
+		await client.close();
+	});
+
 	it("serves protected resource metadata naming its login, at both well-known paths", async () => {
 		for (const path of [
 			"/.well-known/oauth-protected-resource",
@@ -258,7 +313,10 @@ describe("the gate a deployment's settings choose", () => {
 			{ ...withoutToken, ...jwtSettings },
 		);
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ space: "initech" });
+		expect(await response.json()).toEqual({
+			space: "initech",
+			actor: { id: "person-1", name: "Ada" },
+		});
 		expect(fetched).toEqual([JWKS_URL]);
 	});
 

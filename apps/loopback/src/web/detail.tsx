@@ -1,6 +1,13 @@
 import { Badge, Banner, Button, InputArea, Text } from "@cloudflare/kumo";
-import { useAtomSet } from "@effect/atom-react";
-import { ApiError, type Ask, type Entry, type QuestionAsk, type Reply } from "@loopbackhq/sdk";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import {
+	type Actor,
+	ApiError,
+	type Ask,
+	type Entry,
+	type QuestionAsk,
+	type Reply,
+} from "@loopbackhq/sdk";
 import {
 	ArrowLeft,
 	Check,
@@ -10,11 +17,12 @@ import {
 	X,
 } from "@phosphor-icons/react";
 import { Cause, Exit } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
 import { Blocks, Prose } from "./content.tsx";
 import { age, select, useNow } from "./hooks.ts";
 import { KindIcon, Waiting } from "./list.tsx";
-import { replyAtom } from "./state.ts";
+import { meAtom, replyAtom } from "./state.ts";
 
 const STATUS = {
 	awaiting_human: { label: "Your turn", variant: "orange" },
@@ -25,28 +33,42 @@ const STATUS = {
 /** The modifier that sends with ↵, as the keyboard labels it: ⌘ on Apple's, Ctrl elsewhere. */
 const SEND_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
+/** Who the inbox is signed in as, once it knows. */
+const useMe = (): string | undefined =>
+	AsyncResult.getOrElse(useAtomValue(meAtom), () => undefined);
+
+/**
+ * Someone the deployment named, as the person reading sees them: "You" for themselves, and for anyone
+ * the deployment could not name, as on a single-person inbox; otherwise their name.
+ */
+const whoIs = (actor: Actor | undefined, me: string | undefined): string =>
+	actor === undefined || actor.id === me || actor.name === undefined ? "You" : actor.name;
+
 /** A reply in the words of the person who gave it. */
-const said = (reply: Reply): { readonly title: string; readonly body?: string } => {
+const said = (reply: Reply, who: string): { readonly title: string; readonly body?: string } => {
 	switch (reply.outcome) {
 		case "answered": {
 			const chose =
-				reply.selected.length === 0 ? "You answered" : `You chose ${reply.selected.join(", ")}`;
+				reply.selected.length === 0
+					? `${who} answered`
+					: `${who} chose ${reply.selected.join(", ")}`;
 			return reply.text === undefined ? { title: chose } : { title: chose, body: reply.text };
 		}
 		case "approved":
 			return reply.note === undefined
-				? { title: "You approved" }
-				: { title: "You approved", body: reply.note };
+				? { title: `${who} approved` }
+				: { title: `${who} approved`, body: reply.note };
 		case "changes_requested":
-			return { title: "You asked for changes", body: reply.feedback };
+			return { title: `${who} asked for changes`, body: reply.feedback };
 		case "follow_up":
-			return { title: "You asked", body: reply.question };
+			return { title: `${who} asked`, body: reply.question };
 		case "dismissed":
-			return { title: "You dismissed this" };
+			return { title: `${who} dismissed this` };
 	}
 };
 
 function Turn({ entry, now }: { readonly entry: Entry; readonly now: number }) {
+	const me = useMe();
 	if (entry.author === "agent") {
 		return (
 			<div className="flex flex-col gap-3 rounded-lg border border-kumo-line bg-kumo-base p-4">
@@ -58,7 +80,7 @@ function Turn({ entry, now }: { readonly entry: Entry; readonly now: number }) {
 			</div>
 		);
 	}
-	const { title, body } = said(entry.reply);
+	const { title, body } = said(entry.reply, whoIs(entry.by, me));
 	return (
 		<div className="ml-auto flex max-w-[85%] flex-col gap-1 rounded-lg bg-kumo-tint p-4">
 			<Text size="sm" bold>
@@ -316,6 +338,7 @@ export function AskDetail({
 	readonly onReplied?: () => void;
 }) {
 	const now = useNow();
+	const me = useMe();
 	const status = STATUS[ask.status];
 	return (
 		<article className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6 md:px-8">
@@ -333,6 +356,9 @@ export function AskDetail({
 					{ask.project === undefined ? null : <Badge variant="neutral">{ask.project}</Badge>}
 					<Waiting ask={ask} />
 					<span className="ml-auto text-xs tabular-nums">
+						{ask.raisedBy?.name === undefined || ask.raisedBy.id === me
+							? ""
+							: `${ask.raisedBy.name}'s agent · `}
 						{ask.client === undefined ? "" : `${ask.client} · `}
 						{age(ask.createdAt, now)}
 					</span>

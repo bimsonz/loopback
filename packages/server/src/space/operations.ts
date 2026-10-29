@@ -1,4 +1,5 @@
 import type {
+	Actor,
 	Ask,
 	AskPage,
 	Block,
@@ -51,9 +52,14 @@ export const TICKET_TTL_MS = 60 * 1000;
 export const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 
 /** A question or review an agent is opening, with the MCP client that sent it when known. */
-export type OpenRequest =
-	| { readonly kind: "question"; readonly input: QuestionInput; readonly client?: string }
-	| { readonly kind: "review"; readonly input: ReviewInput; readonly client?: string };
+export type OpenRequest = (
+	| { readonly kind: "question"; readonly input: QuestionInput }
+	| { readonly kind: "review"; readonly input: ReviewInput }
+) & {
+	readonly client?: string;
+	/** Whose agent is asking. A retried call is only recognised as the same person's. */
+	readonly actor: Actor;
+};
 
 /** An upload ticket as the space issues it. The worker turns `token` into a URL. */
 export interface IssuedUpload {
@@ -170,6 +176,7 @@ export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
 	const key = yield* fingerprint({
 		kind: request.kind,
 		client: request.client ?? null,
+		actor: request.actor.id,
 		input: request.input,
 	});
 	const since = new Date(Date.parse(at) - REATTACH_WINDOW_MS).toISOString();
@@ -195,6 +202,7 @@ export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
 		status: "awaiting_human",
 		project: request.input.project ?? null,
 		client: request.client ?? null,
+		raisedBy: request.actor,
 		createdAt: at,
 		updatedAt: at,
 		closedAt: null,
@@ -424,7 +432,7 @@ export const cancelTask = Effect.fn("Space.cancelTask")(function* (
 });
 
 /** Records a person's reply, wakes the agent waiting for it, and tells every inbox. */
-export const reply = Effect.fn("Space.reply")(function* (askId: string, answer: Reply) {
+export const reply = Effect.fn("Space.reply")(function* (askId: string, answer: Reply, by: Actor) {
 	const store = yield* AskStore;
 	const replies = yield* Replies;
 	const at = yield* now;
@@ -433,7 +441,7 @@ export const reply = Effect.fn("Space.reply")(function* (askId: string, answer: 
 		Effect.gen(function* () {
 			const found = yield* findAsk(askId);
 			yield* checkReply(found, answer);
-			yield* store.append(askId, { author: "human", reply: answer, at });
+			yield* store.append(askId, { author: "human", reply: answer, by, at });
 			yield* store.setStatus(askId, status, at);
 			return found;
 		}),

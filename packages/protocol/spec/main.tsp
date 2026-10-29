@@ -236,10 +236,23 @@ model ReviewPrompt {
 	summary?: string;
 }
 
+/** Someone a deployment's gate recognised: a person, or the agent they authorised. */
+model Actor {
+	/** Stable within the deployment, as its gate names them. */
+	id: string;
+
+	/** How to show them, when the gate knows. */
+	name?: string;
+}
+
 /** A reply the person gave. */
 model HumanEntry {
 	author: "human";
 	reply: Reply;
+
+	/** Who replied, when the deployment knows. */
+	by?: Actor;
+
 	at: utcDateTime;
 }
 
@@ -269,6 +282,9 @@ model AskCommon {
 
 	/** The MCP client that asked, such as `claude-code 2.1.0`. */
 	client?: string;
+
+	/** Whose agent asked: the person its credential belongs to, when the deployment knows. */
+	raisedBy?: Actor;
 
 	/** Every turn after the ask was opened, oldest first. */
 	thread: Entry[];
@@ -335,6 +351,7 @@ model EventTicket {
 /** Who the caller is. */
 model Whoami {
 	space: string;
+	actor: Actor;
 }
 
 /** A stored upload. */

@@ -73,5 +73,10 @@ export const migrations = SqliteMigrator.layer({
 				)
 			`;
 		}),
+		"0004_raised_by": Effect.gen(function* () {
+			const sql = yield* SqlClient.SqlClient;
+			// Whose agent asked, as the gate named them; asks opened before it was recorded have none.
+			yield* sql`ALTER TABLE asks ADD COLUMN raised_by TEXT`;
+		}),
 	}),
 });

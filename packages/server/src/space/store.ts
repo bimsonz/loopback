@@ -11,6 +11,7 @@ interface AskRow {
 	readonly prompt: string;
 	readonly project: string | null;
 	readonly client: string | null;
+	readonly raisedBy: string | null;
 	readonly revises: string | null;
 	readonly createdAt: string;
 	readonly updatedAt: string;
@@ -32,6 +33,7 @@ const askOf = (row: AskRow): AskRecord => {
 		status: row.status,
 		project: row.project,
 		client: row.client,
+		raisedBy: row.raisedBy === null ? null : JSON.parse(row.raisedBy),
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
 		closedAt: row.closedAt,
@@ -91,7 +93,7 @@ export class AskStore extends Context.Service<
 					Effect.orDie,
 				);
 			const columns = sql.literal(`
-				id, kind, key, status, prompt, project, client, revises,
+				id, kind, key, status, prompt, project, client, raised_by AS raisedBy, revises,
 				created_at AS createdAt, updated_at AS updatedAt, closed_at AS closedAt,
 				last_waited_at AS lastWaitedAt
 			`);
@@ -131,6 +133,7 @@ export class AskStore extends Context.Service<
 						prompt: JSON.stringify(record.prompt),
 						project: record.project,
 						client: record.client,
+						raised_by: record.raisedBy === null ? null : JSON.stringify(record.raisedBy),
 						revises: record.kind === "review" ? record.revises : null,
 						created_at: record.createdAt,
 						updated_at: record.updatedAt,
