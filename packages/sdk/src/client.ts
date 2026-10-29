@@ -23,8 +23,8 @@ export interface LoopbackConfig {
 	readonly baseUrl: string;
 	/**
 	 * The credential the deployment's gate accepts, or a function that fetches a fresh one. Leave it
-	 * out where something in front of Loopback already signs requests in, as a hosted deployment's
-	 * dispatcher does: requests then carry no credential of their own.
+	 * out where something in front of Loopback already signs requests in, as a Worker that vouches
+	 * for its callers does: requests then carry no credential of their own.
 	 */
 	readonly token?: string | (() => string | Promise<string>);
 	/** A `fetch` to use instead of the global one. */

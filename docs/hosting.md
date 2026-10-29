@@ -1,69 +1,134 @@
 # Hosting Loopback for many people
 
-Loopback is a single-tenant Worker. To serve many people, run one copy of the same build per tenant
-on [Workers for Platforms](https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/):
-each tenant gets a user Worker in a dispatch namespace, with its own Durable Objects, bucket and
-secret, and a dispatch Worker in front decides who is calling and routes to the right copy. Nothing
-in this repository changes for it.
+One Loopback deployment can serve many tenants. Every space is its own Durable Object with its own
+SQLite database, so tenants never share storage, and what decides which space a request opens is the
+deployment's gate. The token gate opens a single space behind one secret. The JWT gate opens a space
+per tenant behind any login that issues JWTs (your own, Better Auth, Auth0, WorkOS, Clerk, Cloudflare
+Access), reading the space and the person from each token's claims.
 
-## What a tenant's Worker is made of
+Loopback ships no login of its own. People sign in to yours; Loopback checks what it issued.
 
-Build from a clean checkout (`pnpm install && pnpm --filter loopback build`). The build writes
-Cloudflare's Build Output to `apps/loopback/.cloudflare/output/v0/workers/default/`:
+## Point Loopback at your login
 
-| Path                 | What it is                                                                                            |
-| -------------------- | ----------------------------------------------------------------------------------------------------- |
-| `bundle/index.js`    | The Worker: one ES module, exporting the `fetch` handler and the `Space` class.                       |
-| `worker.config.json` | The resolved configuration: compatibility date and flags, assets, bindings, `exports`, observability. |
-| `assets/`            | The inbox's static files, `_headers` among them.                                                      |
+The JWT gate is chosen by its settings. None of them is a secret, so declare them as text in
+`apps/loopback/cloudflare.config.ts`, in place of the token's secret:
 
-Upload each copy with the [script upload API](https://developers.cloudflare.com/api/resources/workers_for_platforms/subresources/dispatch/subresources/namespaces/subresources/scripts/methods/update/),
-taking the metadata from `worker.config.json`:
+```ts
+env: {
+	FILES: bindings.r2(),
+	LOOPBACK_JWKS_URL: bindings.text("https://login.example.com/.well-known/jwks.json"),
+	LOOPBACK_JWT_ISSUER: bindings.text("https://login.example.com"),
+	LOOPBACK_JWT_AUDIENCE: bindings.text("https://loopback.example.com/mcp"),
+	LOOPBACK_SPACE_CLAIM: bindings.text("org_id"),
+},
+```
 
-- `main_module`: `index.js`, with `compatibility_date` and `compatibility_flags` as built.
-- `bindings`: `FILES` as an `r2_bucket` naming the tenant's own bucket, and `LOOPBACK_TOKEN` as
-  `secret_text`, a random value of at least 32 characters that nobody needs to know, since the
-  dispatcher vouches for every caller. There is no Durable Object binding: Loopback reaches its
-  spaces through the runtime's own binding for the `Space` class the Worker exports, whatever the
-  script is called.
-- `exports`: `{ "Space": { "type": "durable-object", "storage": "sqlite" } }`, the same on every
-  upload. The first upload creates the `Space` namespace, and there are no migration tags to track.
-- `assets`: the inbox's files through an assets upload session, configured as `worker.config.json`
-  says (single-page application, the Worker first for `/api/*`, `/mcp` and `/.well-known/*`).
-- `observability`, as built, so each tenant's logs can be read by its script name.
+| Setting                 | What it is                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `LOOPBACK_JWKS_URL`     | Where your login publishes the keys it signs tokens with, as a JSON Web Key Set. |
+| `LOOPBACK_JWT_ISSUER`   | The `iss` every token must carry. MCP clients are sent here to sign in.          |
+| `LOOPBACK_JWT_AUDIENCE` | The audiences a token may be for, comma-separated. It must carry one in `aud`.   |
+| `LOOPBACK_SPACE_CLAIM`  | The claim that names the space a token opens: an organisation or workspace id.   |
+| `LOOPBACK_NAME_CLAIM`   | Optional. The claim holding the person's display name; `name` unless you say so. |
 
-## What the dispatcher does
+Set either `LOOPBACK_TOKEN` or the JWT settings, never both: a deployment with both, or neither,
+answers every request with a 500 that says which to set.
 
-- **Routes by hostname.** Each tenant has a hostname of its own, such as `<tenant>.example.com`, or
-  a custom hostname through Cloudflare for SaaS. Forward the request with its URL unchanged: Loopback
-  builds the inbox's address and upload URLs from it.
-- **Signs people in, and vouches for them.** Authenticate however your service does (a session cookie
-  for the inbox, OAuth or API keys for agents), then invoke the tenant's Worker with props:
+## What a token must carry
 
-  ```ts
-  const worker = env.DISPATCHER.get(tenant.script, {
-  	props: { loopback: { space: "default", actor: { id: user.id, name: user.name } } },
-  });
-  return worker.fetch(request);
-  ```
+- A signature by one of the key set's keys, with EdDSA, ES256 or RS256. Unsigned tokens and shared
+  secrets are refused.
+- `iss`, `aud` and `exp`, checked against the settings and the clock.
+- `sub`, the person. It becomes the actor Loopback records on what they ask and answer.
+- The space claim, a non-empty string. A token without it is refused, never sent to a default space.
 
-  Only code deployed on the account can set props, so they need no secret. Loopback believes them
-  before its own token gate, refuses malformed ones outright, and its inbox, finding itself signed
-  in, never asks for a token. A request dispatched without props meets the token gate, which
-  refuses it, so pass props on every request you have signed in.
+Everyone whose token names a space shares it: they see the same inbox, each ask records whose agent
+raised it (`raisedBy`), and each reply records who gave it (`by`). An expired token is refused with a
+message saying so, so a client knows to refresh it. If the key set cannot be fetched, the request
+fails as a fault, not a refusal.
 
-- **Lets uploads through.** `PUT /api/v1/uploads/{space}/{token}` carries no credentials: the URL is
-  the credential. Forward it without a session, with its `Content-Length`.
-- **Answers OAuth discovery** for MCP clients that need it, at `/.well-known/oauth-protected-resource`,
-  before dispatching.
+## Agents sign in with OAuth
+
+With the JWT gate, Loopback is an OAuth protected resource, as the MCP specification asks. A refused
+request carries a challenge naming its protected resource metadata (RFC 9728):
+
+```
+WWW-Authenticate: Bearer realm="loopback", resource_metadata="https://loopback.example.com/.well-known/oauth-protected-resource/mcp"
+```
+
+That document names your issuer as the authorization server, so an MCP client goes there to sign the
+person in. Your login then needs to be an OAuth 2.1 authorization server: authorization server
+metadata, PKCE with `S256`, client registration through Client ID Metadata Documents (or dynamic
+client registration), and tokens issued for the resource the client asks for, so `aud` is
+`https://<your deployment>/mcp`. Agents connect with no token to paste:
+
+```sh
+claude mcp add --transport http loopback https://loopback.example.com/mcp
+```
+
+then sign in with `/mcp` in Claude Code.
+
+The web inbox in this repository signs in with a pasted credential, which suits the token gate.
+Behind a login, serve your own front end on [`@loopbackhq/sdk`](../packages/sdk/README.md) and pass
+`token` as a function that returns a fresh JWT; the SDK calls it for every request.
+
+## Compose Loopback in your own Worker
+
+A service that wraps Loopback (adding its own routes, billing or limits) imports the server and
+composes it with its own layers. The `Space` class must be exported beside the handler:
+
+```ts
+import { createLoopback, Declined, jwtGate, Spaces } from "@loopbackhq/server";
+import { Effect, Layer } from "effect";
+
+export { Space } from "@loopbackhq/server";
+
+// Wrap the spaces to meter what tenants open, or decline it with a reason the agent is shown.
+// `overLimit` stands for your own check against the tenant's plan.
+const limited = Layer.effect(
+	Spaces,
+	Effect.gen(function* () {
+		const spaces = yield* Spaces;
+		return Spaces.of({
+			...spaces,
+			of: (access) => {
+				const space = spaces.of(access);
+				return {
+					...space,
+					open: (request) =>
+						overLimit(access.space)
+							? Effect.fail(new Declined({ reason: "This month's asks are used. Upgrade at …" }))
+							: space.open(request),
+				};
+			},
+		});
+	}),
+).pipe(Layer.provide(Spaces.layer));
+
+const loopback = createLoopback({
+	// The key set fetched through a service binding to the login, rather than over the internet.
+	gate: jwtGate((env) => ({
+		jwksUrl: "https://login.example.com/.well-known/jwks.json",
+		fetcher: env.AUTH as Fetcher,
+		issuer: "https://login.example.com",
+		audience: ["https://app.example.com", "https://app.example.com/mcp"],
+		spaceClaim: "workspace",
+	})),
+	spaces: limited,
+});
+```
+
+Route `/api/v1/*`, `/mcp` and `/.well-known/oauth-protected-resource*` to `loopback.fetch`. Only
+`open` and `createUpload` may be declined; the agent receives the reason as its tool's error.
+
+Another Worker on the same account can also vouch for a caller without any token, by invoking
+Loopback through a service binding with `props.loopback = { space, actor: { id, name? } }`. Only code
+deployed on the account can set props, and props that say anything else are refused with a 500.
 
 ## Upgrading
 
-Upload the new build to every tenant's script, with `keep_assets` when the inbox's files have not
-changed. User Workers have no gradual deployments, so upgrade a few tenants first. Confirm each one
-from outside: `GET https://<tenant>/api/v1/openapi.json` names the release in `info.version`.
-
-An upgrade resets the tenant's Durable Object. Agents following background tasks simply poll again;
-a call waiting on a reply has its call into the space retried on a fresh stub, as Cloudflare marks a
-reset as retryable. Schema migrations run in each object when it next starts, and only forward: a
-release that adds one cannot be rolled back past it.
+One deploy upgrades every tenant. A deploy resets each space's Durable Object; agents following
+background tasks simply poll again, and a call waiting on a reply is retried on a fresh stub. Schema
+migrations run in each space when it next starts, and only forward: a release that adds one cannot be
+rolled back past it. Confirm a deployment from outside with `GET /api/v1/openapi.json`, which names
+the release in `info.version`.

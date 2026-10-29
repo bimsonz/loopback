@@ -5,8 +5,9 @@
       │  MCP over HTTP                      │  REST + WebSocket
       ▼                                     ▼
  ┌──────────────────────── Worker ─────────────────────────┐
- │ createLoopback({ gate })                                │
+ │ createLoopback({ gate, spaces? })                       │
  │   Gate: request → Access { space, actor } | Unauthorized │
+ │     token: one space · JWT: the space a claim names      │
  │   /mcp · /api/v1/* · /api/v1/events · static inbox       │
  └──────────────┬──────────────────────────────┬───────────┘
                 ▼ RPC                          ▼
@@ -30,25 +31,30 @@ Loopback that decides who a request is from, and which space it opens, is the `G
 ```ts
 class Gate extends Context.Service<
 	Gate,
-	{ readonly authenticate: (request: Request) => Effect.Effect<Access, Unauthorized> }
+	{
+		readonly authenticate: (request: Request) => Effect.Effect<Access, Unauthorized>;
+		readonly authorizationServers: Effect.Effect<ReadonlyArray<string>>;
+	}
 >()("loopback/Gate") {}
 ```
 
-This repository's deployment provides `TokenGate`: one secret, one space. A deployment that serves
-many people provides a different gate layer (one that verifies its own sessions and maps each tenant
-to a space) and composes `@loopbackhq/server` with it, unchanged.
+The deployment's settings choose between two gates. The token gate opens one space behind one
+secret. The JWT gate opens a space per tenant behind any login that issues JWTs: a token signed by
+one of the login's keys opens the space a configured claim names, as the person in `sub`, and MCP
+clients discover the login through the gate's `authorizationServers`. One deployment then serves
+every tenant, each in its own Durable Object. [`hosting.md`](hosting.md) explains how to set it up.
 
-Before the gate, the Worker believes its **invoker**. Whatever invokes it with props, as a Workers
-for Platforms dispatcher invokes a tenant's Worker or another Worker does through a service binding,
-may vouch for the caller by passing `props.loopback`, `{ space, actor: { id, name? } }`. Only code
-deployed on the account can set props, so nothing on the network can forge them and no secret is
-shared. Props that say anything else are a misconfigured invoker, refused with a 500: never a reason
-to fall back to the gate. A self-hosted Worker is invoked by no one, so its gate decides everything.
+Before the gate, the Worker believes its **invoker**. Another Worker on the account that invokes it
+through a service binding may vouch for the caller by passing `props.loopback`,
+`{ space, actor: { id, name? } }`. Only code deployed on the account can set props, so nothing on the
+network can forge them and no secret is shared. Props that say anything else are a misconfigured
+invoker, refused with a 500: never a reason to fall back to the gate.
 
-That is how one build runs **one copy per tenant** behind a dispatcher: the dispatcher signs people
-in however it likes, routes each tenant's hostname to that tenant's Worker, and passes who is calling
-in props. The inbox asks its host first and, finding itself signed in, never asks for a token. Nothing
-in the server knows which model it is running under.
+A host that wraps Loopback composes `@loopbackhq/server` with its own layers: its gate, and a wrapping
+of `Spaces` that can meter what tenants open, or decline an ask or upload with a reason the agent is
+shown. The server's layering keeps that possible: the domain knows nothing else, the core (the
+`Space` object and its operations) knows only the domain, and an architecture suite fails the build
+if either reaches into the edge.
 
 ## The contract
 

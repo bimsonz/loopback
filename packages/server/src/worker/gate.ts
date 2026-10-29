@@ -37,8 +37,8 @@ const vouched = z.strictObject({
 });
 
 /**
- * The access a Worker's invoker vouches for, when it does: `props.loopback`, as a Workers for
- * Platforms dispatcher or a service binding passes it in `ctx.props`. Only code deployed on the
+ * The access a Worker's invoker vouches for, when it does: `props.loopback`, as another Worker
+ * passes it through a service binding in `ctx.props`. Only code deployed on the
  * account can set props, so nothing on the network can forge them, and they need no secret. Props
  * that say something else are a misconfigured invoker: refused, never passed over for the gate.
  */

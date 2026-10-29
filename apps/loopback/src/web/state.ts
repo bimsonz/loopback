@@ -42,7 +42,7 @@ const clientFor = (token: string): LoopbackApi => make({ baseUrl: location.origi
 const hostedClient = (): LoopbackApi => make({ baseUrl: location.origin });
 
 /**
- * Whether the page's host already signs requests in, as a hosted deployment's dispatcher does: then
+ * Whether the page's host already signs requests in, as a Worker vouching for its callers does: then
  * no token is needed. Asked only while no token is held.
  */
 export const hostedAtom = Atom.make(

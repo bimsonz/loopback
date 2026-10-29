@@ -109,6 +109,9 @@ header. Most clients take a configuration like this:
 }
 ```
 
+Behind a login, through the JWT gate, agents sign in with OAuth instead and need no token in their
+configuration: [`docs/hosting.md`](docs/hosting.md) explains it.
+
 A client that supports MCP background tasks (`io.modelcontextprotocol/tasks`), such as Claude Code
 2.1.304 and later, gets each ask back at once and carries on. A client without them waits for your
 reply, which can take minutes. Loopback sends progress updates to keep the call alive, but a client
@@ -130,9 +133,9 @@ by an OpenAPI document, served at `/api/v1/openapi.json`, for clients in any lan
 
 ## Hosting for many people
 
-Loopback is single-tenant. To serve many people, run one copy of the same build per tenant on
-Workers for Platforms, behind a dispatcher that signs people in.
-[`docs/hosting.md`](docs/hosting.md) explains how.
+One deployment can serve many tenants. Point its JWT gate at any login that issues JWTs, and each
+token's claims name the space it opens and the person; every space is its own Durable Object, and
+agents sign in with OAuth. [`docs/hosting.md`](docs/hosting.md) explains how.
 
 ## Development
 

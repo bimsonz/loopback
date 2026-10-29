@@ -13,7 +13,7 @@ export default defineConfig({
 		env: {
 			FILES: bindings.r2({ name }),
 			LOOPBACK_TOKEN: bindings.text("test-token-0123456789abcdef0123456789"),
-			// The Worker invoked with props, as a Workers for Platforms dispatcher invokes a tenant's.
+			// The Worker invoked with props, as another Worker vouching for its caller invokes it.
 			VOUCHED: bindings.worker({
 				worker: name,
 				props: { loopback: { space: "vouched", actor: { id: "person-1", name: "Ada" } } },
