@@ -12,3 +12,4 @@ export {
 	NotConfigured,
 	TokenGate,
 } from "./worker/gate.ts";
+export { ConfiguredGate, jwtGate, type JwtGateOptions } from "./worker/jwt.ts";

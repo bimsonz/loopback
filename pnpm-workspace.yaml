@@ -35,6 +35,7 @@ catalog:
   "@modelcontextprotocol/server": 2.4.0
   "@modelcontextprotocol/client": 2.4.0
   hono: 4.13.14
+  jose: 6.2.13
   "@hono/zod-validator": 0.9.1
   secure-json-parse: 4.1.1
   zod: 4.6.7

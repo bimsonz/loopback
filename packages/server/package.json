@@ -26,6 +26,7 @@
 		"@modelcontextprotocol/server": "catalog:",
 		"effect": "catalog:",
 		"hono": "catalog:",
+		"jose": "catalog:",
 		"secure-json-parse": "catalog:",
 		"zod": "catalog:"
 	},

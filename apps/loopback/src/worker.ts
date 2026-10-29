@@ -1,5 +1,5 @@
-import { createLoopback, TokenGate } from "@loopbackhq/server";
+import { createLoopback, ConfiguredGate } from "@loopbackhq/server";
 
 export { Space } from "@loopbackhq/server";
 
-export default createLoopback({ gate: TokenGate });
+export default createLoopback({ gate: ConfiguredGate });

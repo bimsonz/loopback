@@ -84,6 +84,9 @@ catalogs:
     hono:
       specifier: 4.13.14
       version: 4.13.14
+    jose:
+      specifier: 6.2.13
+      version: 6.2.13
     jsdom:
       specifier: 30.1.3
       version: 30.1.3
@@ -307,6 +310,9 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.13.14
+      jose:
+        specifier: 'catalog:'
+        version: 6.2.13
       secure-json-parse:
         specifier: 'catalog:'
         version: 4.1.1

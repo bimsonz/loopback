@@ -10,12 +10,20 @@ export interface Access {
 
 /**
  * Decides who a request is from when no invoker has vouched for it. This is where a deployment plugs
- * in: the token gate below serves a single space behind one secret, and any other gate (one tenant
- * per space, OAuth, an edge identity header) is another layer providing this service.
+ * in: the token gate below serves a single space behind one secret, the JWT gate serves a space per
+ * tenant behind any login that issues JWTs, and any other gate (an edge identity header, say) is
+ * another layer providing this service.
  */
 export class Gate extends Context.Service<
 	Gate,
-	{ readonly authenticate: (request: Request) => Effect.Effect<Access, Unauthorized> }
+	{
+		readonly authenticate: (request: Request) => Effect.Effect<Access, Unauthorized>;
+		/**
+		 * The OAuth authorization servers that issue the credentials this gate accepts, which MCP clients
+		 * discover through protected resource metadata (RFC 9728). None when the gate has none.
+		 */
+		readonly authorizationServers: Effect.Effect<ReadonlyArray<string>>;
+	}
 >()("loopback/Gate") {}
 
 /** A deployment that cannot serve any request until it is configured. Answered as a 500 that says why. */
@@ -74,43 +82,47 @@ const MIN_TOKEN_LENGTH = 32;
  */
 export const TokenGate = Layer.effect(
 	Gate,
-	Effect.gen(function* () {
-		const expected = yield* Effect.cached(
-			Effect.gen(function* () {
-				const secret = yield* Config.Redacted("LOOPBACK_TOKEN").pipe(
-					Effect.catch(() =>
-						Effect.die(
-							new NotConfigured(
-								"LOOPBACK_TOKEN is not set. Deploy with it in a secrets file: `cf deploy --secrets-file <file>`.",
-							),
+	Effect.suspend(() => makeTokenGate),
+);
+
+/** The token gate's service, for a gate that chooses between gates. */
+export const makeTokenGate: Effect.Effect<Gate["Service"]> = Effect.gen(function* () {
+	const expected = yield* Effect.cached(
+		Effect.gen(function* () {
+			const secret = yield* Config.Redacted("LOOPBACK_TOKEN").pipe(
+				Effect.catch(() =>
+					Effect.die(
+						new NotConfigured(
+							"LOOPBACK_TOKEN is not set. Deploy with it in a secrets file (`cf deploy --secrets-file <file>`), or set LOOPBACK_JWKS_URL and the other JWT settings for a space per tenant.",
 						),
 					),
+				),
+			);
+			if (Redacted.value(secret).length < MIN_TOKEN_LENGTH) {
+				return yield* Effect.die(
+					new NotConfigured(
+						`LOOPBACK_TOKEN must be at least ${MIN_TOKEN_LENGTH} characters. Generate one with \`openssl rand -hex 32\`.`,
+					),
 				);
-				if (Redacted.value(secret).length < MIN_TOKEN_LENGTH) {
-					return yield* Effect.die(
-						new NotConfigured(
-							`LOOPBACK_TOKEN must be at least ${MIN_TOKEN_LENGTH} characters. Generate one with \`openssl rand -hex 32\`.`,
-						),
-					);
+			}
+			return yield* Effect.promise(() => digest(Redacted.value(secret)));
+		}),
+	);
+	return Gate.of({
+		authenticate: (request) =>
+			Effect.gen(function* () {
+				const presented = credentialOf(request);
+				if (presented === undefined) {
+					return yield* new Unauthorized({ reason: "A bearer token is required." });
 				}
-				return yield* Effect.promise(() => digest(Redacted.value(secret)));
+				const wanted = yield* expected;
+				const actual = yield* Effect.promise(() => digest(presented));
+				if (!crypto.subtle.timingSafeEqual(wanted, actual)) {
+					return yield* new Unauthorized({ reason: "The token is not valid." });
+				}
+				const access: Access = { space: DEFAULT_SPACE, actor: { id: "owner" } };
+				return access;
 			}),
-		);
-		return Gate.of({
-			authenticate: (request) =>
-				Effect.gen(function* () {
-					const presented = credentialOf(request);
-					if (presented === undefined) {
-						return yield* new Unauthorized({ reason: "A bearer token is required." });
-					}
-					const wanted = yield* expected;
-					const actual = yield* Effect.promise(() => digest(presented));
-					if (!crypto.subtle.timingSafeEqual(wanted, actual)) {
-						return yield* new Unauthorized({ reason: "The token is not valid." });
-					}
-					const access: Access = { space: DEFAULT_SPACE, actor: { id: "owner" } };
-					return access;
-				}),
-		});
-	}),
-);
+		authorizationServers: Effect.succeed([]),
+	});
+});

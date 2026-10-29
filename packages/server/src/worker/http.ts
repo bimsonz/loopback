@@ -33,11 +33,23 @@ const document = { ...openApiDocument, info: { ...openApiDocument.info, version:
 /** How many closed asks a history page holds when the caller does not say. */
 const DEFAULT_PAGE = 20;
 
-const unauthorized = (message: string) =>
+/**
+ * A refused request's 401. When the gate takes credentials from an authorization server, the
+ * challenge says where its protected resource metadata is, so an MCP client can go and sign in.
+ */
+const unauthorized = (message: string, resourceMetadata?: string) =>
 	Response.json(problem("auth.unauthorized", message), {
 		status: 401,
-		headers: { "WWW-Authenticate": 'Bearer realm="loopback"' },
+		headers: {
+			"WWW-Authenticate":
+				resourceMetadata === undefined
+					? 'Bearer realm="loopback"'
+					: `Bearer realm="loopback", resource_metadata="${resourceMetadata}"`,
+		},
 	});
+
+/** Where the MCP endpoint's protected resource metadata is (RFC 9728): the well-known path, then its path. */
+const RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 
 /** The prefix a browser puts its event ticket behind in `Sec-WebSocket-Protocol`. */
 const TICKET_PROTOCOL_PREFIX = "loopback.ticket.";
@@ -56,7 +68,7 @@ const ticketOf = (request: Request) => {
 
 /**
  * Who a request is from. The Worker's invoker vouches first, when it does; otherwise the
- * deployment's gate decides from the request itself.
+ * deployment's gate decides from the request itself. A refusal is the 401 to answer with.
  */
 const authenticate = (
 	runtime: WorkerRuntime,
@@ -72,7 +84,22 @@ const authenticate = (
 			const vouched = yield* vouchedAccess(props);
 			if (vouched !== undefined) return vouched;
 			const gate = yield* Gate;
-			return yield* gate.authenticate(request);
+			return yield* gate
+				.authenticate(request)
+				.pipe(
+					Effect.catchTag("Unauthorized", (refused) =>
+						Effect.flatMap(gate.authorizationServers, (servers) =>
+							Effect.fail(
+								unauthorized(
+									refused.reason,
+									servers.length === 0
+										? undefined
+										: `${new URL(request.url).origin}${RESOURCE_METADATA_PATH}/mcp`,
+								),
+							),
+						),
+					),
+				);
 		}).pipe(Effect.result),
 	);
 
@@ -260,7 +287,7 @@ const deps = (runtimeOf: (env: WorkerBindings) => WorkerRuntime): RouteDeps<AppE
 			return unauthorized("This operation accepts no credentials Loopback can check.");
 		}
 		const access = await authenticate(runtimeOf(c.env), c.req.raw, propsOf(c), c.get("requestId"));
-		if (access._tag === "Failure") return unauthorized(access.failure.reason);
+		if (access._tag === "Failure") return access.failure;
 		c.set("access", access.success);
 		await next();
 		return undefined;
@@ -304,6 +331,26 @@ export const makeApp = (runtimeOf: (env: WorkerBindings) => WorkerRuntime) => {
 
 	app.get("/api/v1/openapi.json", (c) => c.json(document));
 
+	// Protected resource metadata for the MCP endpoint, when the gate takes credentials from an
+	// authorization server: clients find it at the well-known path or under it, by the resource's path.
+	const protectedResource = async (c: Context<AppEnv>) => {
+		const servers = await run(
+			runtimeOf(c.env),
+			c.req.raw.signal,
+			c.get("requestId"),
+			Gate.use((gate) => gate.authorizationServers),
+		);
+		if (servers.length === 0) return c.json(problem("not_found", "No such route."), 404);
+		return c.json({
+			resource: `${new URL(c.req.url).origin}/mcp`,
+			authorization_servers: servers,
+			bearer_methods_supported: ["header"],
+			resource_name: "Loopback",
+		});
+	};
+	app.get(RESOURCE_METADATA_PATH, protectedResource);
+	app.get(`${RESOURCE_METADATA_PATH}/mcp`, protectedResource);
+
 	app.get("/api/v1/events", async (c) => {
 		if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") {
 			return c.json(problem("events.upgrade_required", "Connect with a WebSocket."), 426);
@@ -330,7 +377,7 @@ export const makeApp = (runtimeOf: (env: WorkerBindings) => WorkerRuntime) => {
 			);
 		}
 		const access = await authenticate(runtime, c.req.raw, propsOf(c), c.get("requestId"));
-		if (access._tag === "Failure") return unauthorized(access.failure.reason);
+		if (access._tag === "Failure") return access.failure;
 		return run(
 			runtime,
 			c.req.raw.signal,
@@ -343,7 +390,7 @@ export const makeApp = (runtimeOf: (env: WorkerBindings) => WorkerRuntime) => {
 	app.all("/mcp", async (c) => {
 		const runtime = runtimeOf(c.env);
 		const access = await authenticate(runtime, c.req.raw, propsOf(c), c.get("requestId"));
-		if (access._tag === "Failure") return unauthorized(access.failure.reason);
+		if (access._tag === "Failure") return access.failure;
 		return mcp(c.req.raw, runtime, access.success, c.get("requestId"));
 	});
 
