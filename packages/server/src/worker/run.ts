@@ -24,7 +24,10 @@ export const problem = (code: string, message: string): Problem => ({ code, mess
  * cached in it, so no request's pending work can be left for a later one to wait on. Configuration
  * is read from the environment, and logs are JSON, which Workers Logs indexes.
  */
-export const runtimes = (gate: Layer.Layer<Gate, never, WorkerEnv>) => {
+export const runtimes = (
+	gate: Layer.Layer<Gate, never, WorkerEnv>,
+	spaces: Layer.Layer<Spaces, never, WorkerEnv>,
+) => {
 	const built = new WeakMap<object, WorkerRuntime>();
 	return (env: WorkerBindings): WorkerRuntime => {
 		let runtime = built.get(env);
@@ -32,7 +35,7 @@ export const runtimes = (gate: Layer.Layer<Gate, never, WorkerEnv>) => {
 			runtime = ManagedRuntime.make(
 				Layer.mergeAll(
 					gate,
-					Spaces.layer,
+					spaces,
 					Files.layer,
 					ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
 					Logger.layer([Logger.consoleJson]),

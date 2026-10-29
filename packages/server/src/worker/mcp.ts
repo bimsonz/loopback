@@ -318,7 +318,9 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 					});
 					return yield* settle(ctx, space, ask.id, 0, ask.createdAt);
 				}).pipe(
-					Effect.catchTag("ContentInvalid", (error) => Effect.succeed(refused(error.reason))),
+					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
+						Effect.succeed(refused(error.reason)),
+					),
 				),
 			),
 	);
@@ -344,7 +346,9 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 					});
 					return yield* settle(ctx, space, ask.id, 0, ask.createdAt);
 				}).pipe(
-					Effect.catchTag("ContentInvalid", (error) => Effect.succeed(refused(error.reason))),
+					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
+						Effect.succeed(refused(error.reason)),
+					),
 				),
 			),
 	);
@@ -432,7 +436,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 						),
 						structuredContent: ticket,
 					};
-				}),
+				}).pipe(Effect.catchTag("Declined", (error) => Effect.succeed(refused(error.reason)))),
 			),
 	);
 

@@ -46,6 +46,14 @@ export class UploadRejected extends Schema.TaggedError<UploadRejected>()("Upload
 	reason: Schema.String,
 }) {}
 
+/**
+ * The deployment declined to open an ask or an upload, as a host's limits can: the space itself never
+ * declines. The reason is written for the agent, and says what would let it through.
+ */
+export class Declined extends Schema.TaggedError<Declined>()("Declined", {
+	reason: Schema.String,
+}) {}
+
 /** The request carries no credentials the gate accepts. */
 export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", {
 	reason: Schema.String,
