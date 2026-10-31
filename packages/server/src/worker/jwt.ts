@@ -1,5 +1,5 @@
 import { Config, Effect, Layer, Option } from "effect";
-import { createRemoteJWKSet, customFetch, errors, jwtVerify } from "jose";
+import { createRemoteJWKSet, customFetch, errors, type JWTPayload, jwtVerify } from "jose";
 import { z } from "zod";
 import { Unauthorized } from "../domain/errors.ts";
 import type { WorkerBindings } from "./env.ts";
@@ -20,6 +20,13 @@ export interface JwtGateOptions {
 	readonly spaceClaim: string;
 	/** The claim that holds the caller's display name. `name` unless said otherwise. */
 	readonly nameClaim?: string;
+	/**
+	 * Asked once a token has verified, with its claims and the caller they name: whether that caller
+	 * may still come in. A login whose tokens outlive a membership or a grant answers here, returning
+	 * the reason to refuse, which the caller is told, or nothing to let them in. A check that throws
+	 * fails the request as a defect, like a key set out of reach.
+	 */
+	readonly check?: (claims: JWTPayload, access: Access) => Promise<string | undefined>;
 }
 
 /** The caller a token's claims name, read from the configured claims. */
@@ -96,6 +103,11 @@ export const makeJwtGate = (options: JwtGateOptions): Gate["Service"] => {
 			}
 			const { sub, space, name } = parsed.data;
 			const access: Access = { space, actor: name === undefined ? { id: sub } : { id: sub, name } };
+			if (options.check !== undefined) {
+				const check = options.check;
+				const refusal = yield* Effect.promise(() => check(verified.payload, access));
+				if (refusal !== undefined) return yield* new Unauthorized({ reason: refusal });
+			}
 			return access;
 		}),
 		authorizationServers: Effect.succeed([options.issuer]),

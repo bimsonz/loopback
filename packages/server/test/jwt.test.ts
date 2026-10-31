@@ -40,14 +40,21 @@ const token = (
 	return (subject === null ? jwt : jwt.setSubject(subject)).sign(key);
 };
 
-/** A deployment whose gate takes the login's JWTs, its key set fetched however `fetchKeys` says. */
-const deployment = (fetchKeys: () => Promise<Response> = async () => Response.json(jwks)) => {
+/**
+ * A deployment whose gate takes the login's JWTs, its key set fetched however `fetchKeys` says, and
+ * each verified caller put to `check` when there is one.
+ */
+const deployment = (
+	fetchKeys: () => Promise<Response> = async () => Response.json(jwks),
+	check?: JwtGateOptions["check"],
+) => {
 	const options: JwtGateOptions = {
 		jwksUrl: JWKS_URL,
 		fetcher: { fetch: fetchKeys },
 		issuer: ISSUER,
 		audience: ["https://app.login.test", AUDIENCE],
 		spaceClaim: "workspace",
+		...(check === undefined ? {} : { check }),
 	};
 	return createLoopback({ gate: jwtGate(() => options) });
 };
@@ -269,6 +276,96 @@ describe("a JWT-gated deployment", () => {
 	it("fails as a fault, not a refusal, when the login's keys are out of reach", async () => {
 		const unreachable = deployment(async () => new Response("down", { status: 503 }));
 		const response = await call(unreachable, "/api/v1/whoami", { bearer: await token() });
+		expect(response.status).toBe(500);
+		expect(await response.json()).toMatchObject({ code: "server.defect" });
+	});
+});
+
+describe("a deployment whose frontend routes by space", () => {
+	it("gives agents the inbox address the host builds, for the space their token names", async () => {
+		const app = createLoopback({
+			gate: jwtGate(() => ({
+				jwksUrl: JWKS_URL,
+				fetcher: { fetch: async () => Response.json(jwks) },
+				issuer: ISSUER,
+				audience: [AUDIENCE],
+				spaceClaim: "workspace",
+			})),
+			inboxUrl: ({ origin, space, askId }) =>
+				`${origin}/w/${space}${askId === undefined ? "" : `/asks/${askId}`}`,
+		});
+		const settings = { ...env };
+		const client = new Client({ name: "ada-agent", version: "1.0.0" });
+		await client.connect(
+			new StreamableHTTPClientTransport(new URL(`${ORIGIN}/mcp`), {
+				fetch: async (url, init) =>
+					app.fetch(new Request(url, init), settings, createExecutionContext()),
+				requestInit: {
+					headers: { Authorization: `Bearer ${await token({ workspace: "team-7" })}` },
+				},
+			}),
+		);
+		const inbox = await client.callTool({ name: "open_inbox", arguments: {} });
+		expect(inbox.structuredContent).toEqual({ url: `${ORIGIN}/w/team-7` });
+		const one = await client.callTool({ name: "open_inbox", arguments: { askId: "ask-1" } });
+		expect(one.structuredContent).toEqual({ url: `${ORIGIN}/w/team-7/asks/ask-1` });
+		await client.close();
+	});
+});
+
+describe("a JWT-gated deployment whose host checks each caller", () => {
+	const asked: Array<{ client: unknown; space: string; actor: string }> = [];
+	const app = deployment(undefined, async (claims, access) => {
+		asked.push({ client: claims["client_id"], space: access.space, actor: access.actor.id });
+		if (access.actor.id === "removed") return "You are no longer a member of this workspace.";
+		if (claims["client_id"] === "revoked-agent") return "This connection was revoked.";
+		return undefined;
+	});
+	afterEach(() => {
+		asked.length = 0;
+	});
+
+	it("lets in a caller the check passes, as the token names them", async () => {
+		const response = await call(app, "/api/v1/whoami", {
+			bearer: await token({ client_id: "agent-1" }),
+		});
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			space: "acme",
+			actor: { id: "person-1", name: "Ada" },
+		});
+		expect(asked).toEqual([{ client: "agent-1", space: "acme", actor: "person-1" }]);
+	});
+
+	it("refuses a caller the check turns away, with the check's reason, on REST and MCP", async () => {
+		const removed = await token({}, { subject: "removed" });
+		const revoked = await token({ client_id: "revoked-agent" });
+		for (const path of ["/api/v1/whoami", "/mcp"]) {
+			const method = path === "/mcp" ? "POST" : "GET";
+			const gone = await call(app, path, { method, bearer: removed });
+			expect(gone.status).toBe(401);
+			expect(await gone.json()).toMatchObject({
+				message: "You are no longer a member of this workspace.",
+			});
+			const cut = await call(app, path, { method, bearer: revoked });
+			expect(cut.status).toBe(401);
+			expect(await cut.json()).toMatchObject({ message: "This connection was revoked." });
+		}
+	});
+
+	it("never asks the check about a token that did not verify", async () => {
+		const response = await call(app, "/api/v1/whoami", {
+			bearer: await token({}, { key: stranger.privateKey }),
+		});
+		expect(response.status).toBe(401);
+		expect(asked).toEqual([]);
+	});
+
+	it("fails as a fault, not a refusal, when the check cannot answer", async () => {
+		const broken = deployment(undefined, async () => {
+			throw new Error("membership store down");
+		});
+		const response = await call(broken, "/api/v1/whoami", { bearer: await token() });
 		expect(response.status).toBe(500);
 		expect(await response.json()).toMatchObject({ code: "server.defect" });
 	});

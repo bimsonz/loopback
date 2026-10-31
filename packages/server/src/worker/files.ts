@@ -62,6 +62,9 @@ export class Files extends Context.Service<
 	);
 }
 
+/** Where every file a space holds lives, under one prefix. */
+export const filesOf = (spaceId: string) => `spaces/${spaceId}/`;
+
 /** Where an upload's bytes live. */
 export const fileKey = (spaceId: string, uploadId: string) =>
-	`spaces/${spaceId}/uploads/${uploadId}`;
+	`${filesOf(spaceId)}uploads/${uploadId}`;

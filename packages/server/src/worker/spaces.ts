@@ -2,6 +2,8 @@ import { exports } from "cloudflare:workers";
 import { Context, Effect, Layer, Option } from "effect";
 import type { Space } from "../space/object.ts";
 import { type SpaceClient, spaceClient } from "../space/rpc.ts";
+import type { WorkerBindings } from "./env.ts";
+import { filesOf } from "./files.ts";
 import type { Access } from "./gate.ts";
 
 /**
@@ -50,3 +52,21 @@ export class Spaces extends Context.Service<
 		});
 	});
 }
+
+/**
+ * Deletes everything a space holds: its asks and their threads, its tickets, and the files its
+ * uploads stored. Inboxes watching it are closed, and it carries on as an empty space. For a host
+ * removing a tenant; no request can reach it. Running it again finishes what a failed run left.
+ */
+export const eraseSpace = async (env: WorkerBindings, space: string): Promise<void> => {
+	const spaces = namespace();
+	await spaces.getByName(space).erase();
+	await eraseFiles(env.FILES, filesOf(spaces.idFromName(space).toString()));
+};
+
+/** Deletes every file under a prefix, a page of listings at a time. */
+const eraseFiles = async (files: R2Bucket, prefix: string): Promise<void> => {
+	const listed = await files.list({ prefix, limit: 1000 });
+	if (listed.objects.length > 0) await files.delete(listed.objects.map(({ key }) => key));
+	if (listed.truncated) await eraseFiles(files, prefix);
+};

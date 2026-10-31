@@ -18,21 +18,26 @@ type SpaceServices = AskStore | UploadStore | TicketStore | Host | Replies | Pre
  * does is a space operation, served through `call`; `fetch` only accepts an inbox's WebSocket.
  */
 export class Space extends DurableObject {
-	readonly #runtime: ManagedRuntime.ManagedRuntime<SpaceServices, never>;
+	#runtime: ManagedRuntime.ManagedRuntime<SpaceServices, never>;
 
 	constructor(ctx: DurableObjectState, env: unknown) {
 		super(ctx, env as never);
 		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+		this.#runtime = this.#build();
+		// Build the runtime, migrations included, before the object takes any request.
+		void ctx.blockConcurrencyWhile(() => this.#runtime.runPromise(Effect.void));
+	}
 
-		const sql = SqliteClient.layer({ storage: ctx.storage });
+	#build(): ManagedRuntime.ManagedRuntime<SpaceServices, never> {
+		const sql = SqliteClient.layer({ storage: this.ctx.storage });
 		const host = Layer.succeed(
 			Host,
 			Host.of({
 				broadcast: (event) => this.#broadcast(event),
-				spaceId: ctx.id.toString(),
+				spaceId: this.ctx.id.toString(),
 			}),
 		);
-		this.#runtime = ManagedRuntime.make(
+		return ManagedRuntime.make(
 			Layer.mergeAll(AskStore.layer, UploadStore.layer, TicketStore.layer, migrations).pipe(
 				Layer.provide(sql),
 				Layer.merge(Layer.mergeAll(host, Replies.layer, Presence.layer)),
@@ -40,8 +45,28 @@ export class Space extends DurableObject {
 				Layer.orDie,
 			),
 		);
-		// Build the runtime, migrations included, before the object takes any request.
-		void ctx.blockConcurrencyWhile(() => this.#runtime.runPromise(Effect.void));
+	}
+
+	/**
+	 * Deletes everything the space holds and closes the inboxes watching it. It carries on as an
+	 * empty space: its schema is applied afresh before it takes another request. An agent waiting
+	 * on an ask it held finds the ask gone at the end of its current lap.
+	 */
+	async erase(): Promise<void> {
+		await this.ctx.blockConcurrencyWhile(async () => {
+			for (const socket of this.ctx.getWebSockets()) {
+				try {
+					socket.close(1000, "The space was erased.");
+				} catch {
+					// Already closing.
+				}
+			}
+			const erased = this.#runtime;
+			await this.ctx.storage.deleteAll();
+			this.#runtime = this.#build();
+			await this.#runtime.runPromise(Effect.void);
+			await erased.dispose();
+		});
 	}
 
 	/** Runs one space operation and answers with its Exit, encoded for the trip back. */

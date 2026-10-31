@@ -67,12 +67,24 @@ A reply whose outcome is follow_up is a question back to you: answer it with ans
 
 Every ask names its project: the name of the folder at the root of the repository you are working in (the last part of \`git rev-parse --show-toplevel\`), or of the working directory outside one. Use the same name every time.`;
 
+/** Where an inbox, or one ask in it, is read and answered. */
+export interface InboxLink {
+	readonly origin: string;
+	readonly space: string;
+	readonly askId?: string;
+}
+
+/** The inbox this Worker serves itself: one per deployment, with the ask in the fragment. */
+export const defaultInboxUrl = ({ origin, askId }: InboxLink): string =>
+	askId === undefined ? `${origin}/` : `${origin}/#/${encodeURIComponent(askId)}`;
+
 /** What the factory needs about the request it is building a server for. */
 interface McpCaller {
 	readonly runtime: WorkerRuntime;
 	readonly access: Access;
 	readonly origin: string;
 	readonly requestId: string;
+	readonly inboxUrl: (link: InboxLink) => string;
 }
 
 const clientInfoSchema = z.object({ name: z.string(), version: z.string().optional() });
@@ -287,7 +299,7 @@ const replyTo = (ctx: ServerContext, space: SpaceClient, askId: string) =>
 		}
 	}).pipe(Effect.catchTag("AskNotFound", Effect.die));
 
-const server = ({ runtime, access, origin, requestId }: McpCaller) => {
+const server = ({ runtime, access, origin, requestId, inboxUrl }: McpCaller) => {
 	const mcp = new McpServer({ name: "loopback", version: VERSION }, { instructions: INSTRUCTIONS });
 	/**
 	 * A call that died is logged, and the agent hears only the incident to quote. One its client
@@ -539,8 +551,11 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 			annotations: { readOnlyHint: true, openWorldHint: false },
 		},
 		(input) => {
-			const url =
-				input.askId === undefined ? `${origin}/` : `${origin}/#/${encodeURIComponent(input.askId)}`;
+			const url = inboxUrl(
+				input.askId === undefined
+					? { origin, space: access.space }
+					: { origin, space: access.space, askId: input.askId },
+			);
 			return { ...text(`The person's inbox: ${url}`), structuredContent: { url } };
 		},
 	);
@@ -590,7 +605,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
  * The MCP endpoint. The gate runs first; what it established reaches the per-request server
  * through the `authInfo` the SDK passes along untouched.
  */
-export const makeMcp = () => {
+export const makeMcp = (inboxUrl: (link: InboxLink) => string) => {
 	const callers = new WeakMap<AuthInfo, McpCaller>();
 	const handler = createMcpHandler(
 		(ctx) => {
@@ -604,7 +619,13 @@ export const makeMcp = () => {
 	);
 	return (request: Request, runtime: WorkerRuntime, access: Access, requestId: string) => {
 		const authInfo: AuthInfo = { token: "", clientId: access.actor.id, scopes: [] };
-		callers.set(authInfo, { runtime, access, origin: new URL(request.url).origin, requestId });
+		callers.set(authInfo, {
+			runtime,
+			access,
+			origin: new URL(request.url).origin,
+			requestId,
+			inboxUrl,
+		});
 		return handler.fetch(request, { authInfo });
 	};
 };

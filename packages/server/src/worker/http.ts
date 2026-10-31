@@ -17,7 +17,7 @@ import {
 } from "./run.ts";
 import { UPLOAD_MAX_BYTES } from "../space/operations.ts";
 import { VERSION } from "../version.ts";
-import { makeMcp } from "./mcp.ts";
+import { type InboxLink, makeMcp } from "./mcp.ts";
 import { Spaces } from "./spaces.ts";
 
 declare module "../generated/runtime.gen.ts" {
@@ -314,7 +314,10 @@ const deps = (runtimeOf: (env: WorkerBindings) => WorkerRuntime): RouteDeps<AppE
  * The Worker's surface: the contract's routes, the event socket, the document that describes them,
  * and the MCP endpoint agents connect to.
  */
-export const makeApp = (runtimeOf: (env: WorkerBindings) => WorkerRuntime) => {
+export const makeApp = (
+	runtimeOf: (env: WorkerBindings) => WorkerRuntime,
+	inboxUrl: (link: InboxLink) => string,
+) => {
 	const app = new Hono<AppEnv>({ router: new RegExpRouter() });
 
 	// Middleware before `registerRoutes`: Hono applies it only to routes registered after it.
@@ -390,7 +393,7 @@ export const makeApp = (runtimeOf: (env: WorkerBindings) => WorkerRuntime) => {
 		);
 	});
 
-	const mcp = makeMcp();
+	const mcp = makeMcp(inboxUrl);
 	app.all("/mcp", async (c) => {
 		const runtime = runtimeOf(c.env);
 		const access = await authenticate(runtime, c.req.raw, propsOf(c), c.get("requestId"));

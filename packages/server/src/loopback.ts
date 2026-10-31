@@ -2,6 +2,7 @@ import type { Layer } from "effect";
 import type { WorkerBindings, WorkerEnv } from "./worker/env.ts";
 import type { Gate } from "./worker/gate.ts";
 import { makeApp } from "./worker/http.ts";
+import { defaultInboxUrl, type InboxLink } from "./worker/mcp.ts";
 import { runtimes } from "./worker/run.ts";
 import { Spaces } from "./worker/spaces.ts";
 
@@ -13,6 +14,12 @@ export interface LoopbackOptions {
 	 * wraps `Spaces.layer` to meter what its tenants open, or to decline it with a reason.
 	 */
 	readonly spaces?: Layer.Layer<Spaces, never, WorkerEnv>;
+	/**
+	 * Where the person reads and answers a space's asks, which `open_inbox` gives agents. This
+	 * Worker's own inbox unless said otherwise: a host whose frontend lives elsewhere, or routes by
+	 * space, says where.
+	 */
+	readonly inboxUrl?: (link: InboxLink) => string;
 }
 
 /**
@@ -20,7 +27,10 @@ export interface LoopbackOptions {
  * Durable Object class declared with SQLite storage, and binds `FILES`.
  */
 export const createLoopback = (options: LoopbackOptions) => {
-	const app = makeApp(runtimes(options.gate, options.spaces ?? Spaces.layer));
+	const app = makeApp(
+		runtimes(options.gate, options.spaces ?? Spaces.layer),
+		options.inboxUrl ?? defaultInboxUrl,
+	);
 	return {
 		fetch: (request: Request, env: WorkerBindings, ctx: ExecutionContext) =>
 			app.fetch(request, env, ctx),

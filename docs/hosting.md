@@ -113,13 +113,31 @@ const loopback = createLoopback({
 		issuer: "https://login.example.com",
 		audience: ["https://app.example.com", "https://app.example.com/mcp"],
 		spaceClaim: "workspace",
+		// Asked after each token verifies: return a reason to turn the caller away, or nothing.
+		// `isMember` stands for your own lookup, which should be cached.
+		check: async (_claims, access) =>
+			(await isMember(access.actor.id, access.space))
+				? undefined
+				: "You are no longer a member of this workspace.",
 	})),
 	spaces: limited,
+	// Where `open_inbox` sends people, when your frontend is not this Worker's own inbox.
+	inboxUrl: ({ origin, space, askId }) =>
+		`${origin}/w/${space}${askId === undefined ? "" : `/asks/${askId}`}`,
 });
 ```
 
 Route `/api/v1/*`, `/mcp` and `/.well-known/oauth-protected-resource*` to `loopback.fetch`. Only
 `open` and `createUpload` may be declined; the agent receives the reason as its tool's error.
+
+A JWT outlives whatever it was issued on: a membership, or an agent's grant. `check` is where a
+login that can take those back says so, before the token's expiry. It sees every claim, such as the
+OAuth client a token was issued to. A check that throws fails the request with a 500, as an
+unreachable key set does, since the caller is not at fault.
+
+To remove a tenant, `eraseSpace(env, space)` deletes everything its space holds: asks, threads,
+tickets, and the files its uploads stored. Inboxes watching it are closed, and the space carries on
+empty. Running it again finishes what a failed run left.
 
 Another Worker on the same account can also vouch for a caller without any token, by invoking
 Loopback through a service binding with `props.loopback = { space, actor: { id, name? } }`. Only code
