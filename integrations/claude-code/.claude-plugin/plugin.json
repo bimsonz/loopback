@@ -1,7 +1,7 @@
 {
 	"name": "loopback",
 	"description": "Connects Claude Code to your Loopback inbox and routes every question the agent has for you there, with no prompting: the session is told to ask through Loopback, Claude Code's built-in question prompt is redirected there, and a turn that ends with a question in the conversation is sent back to ask it through Loopback.",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"license": "MIT",
 	"keywords": ["human-in-the-loop", "mcp", "questions", "review"],
 	"userConfig": {
