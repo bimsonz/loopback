@@ -1,7 +1,6 @@
 {
 	"name": "@loopbackhq/sdk",
-	"version": "0.2.0",
-	"private": true,
+	"version": "0.3.0",
 	"description": "A client for Loopback: read and answer what agents ask, and follow the inbox live, from any frontend.",
 	"homepage": "https://github.com/bimsonz/loopback/tree/main/packages/sdk#readme",
 	"license": "MIT",
@@ -10,13 +9,26 @@
 		"url": "git+https://github.com/bimsonz/loopback.git",
 		"directory": "packages/sdk"
 	},
+	"files": [
+		"dist"
+	],
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"
 	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"types": "./dist/src/index.d.ts",
+				"default": "./dist/src/index.js"
+			}
+		},
+		"access": "public"
+	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"build": "tsc -p tsconfig.build.json"
 	},
 	"dependencies": {
 		"@loopbackhq/protocol": "workspace:*",

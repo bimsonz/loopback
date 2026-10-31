@@ -1,0 +1,37 @@
+name: release
+
+# Publishes the packages to npm when a version tag is pushed, after the same checks as CI. npm takes
+# the publish on trust from this workflow (trusted publishing over OIDC), so there is no token, and
+# each package carries provenance saying which commit and run built it.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The tag names the packages' version
+        run: |
+          for manifest in packages/*/package.json; do
+            version=$(node -p "require('./$manifest').version")
+            [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "$manifest is $version, not $GITHUB_REF_NAME"; exit 1; }
+          done
+      - run: pnpm generate:check
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm -r --filter "./packages/*" publish --access public --provenance --no-git-checks

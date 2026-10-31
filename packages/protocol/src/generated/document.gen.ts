@@ -7,7 +7,7 @@
  * Imported rather than read from disk, so it is part of your bundle: it cannot go stale relative to
  * the build, and a missing document fails the build rather than a request.
  */
-import document0 from "../../../protocol/openapi/openapi.json" with { type: "json" };
+import document0 from "../../openapi/openapi.json" with { type: "json" };
 
 /** The document for the version this service currently serves. */
 export const openApiDocument = document0;

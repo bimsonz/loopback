@@ -6,9 +6,11 @@ the live event socket with reconnects, and the inbox state kept current from it.
 It comes in two forms over one implementation: a promise client for any framework, and an Effect
 service.
 
-The SDK is part of this repository's workspace and isn't published to npm. Build your inbox here,
-as an app under `apps/` that depends on `"@loopbackhq/sdk": "workspace:*"`, or in place of the one in
-`apps/loopback`, which is built only on this SDK.
+```sh
+pnpm add @loopbackhq/sdk
+```
+
+The inbox in `apps/loopback` is built only on this SDK, so it is a full example to work from.
 
 ## Promise client
 

@@ -1,7 +1,6 @@
 {
 	"name": "@loopbackhq/protocol",
-	"version": "0.2.0",
-	"private": true,
+	"version": "0.3.0",
 	"description": "The Loopback API contract: the TypeSpec definition, its generated types and the OpenAPI document.",
 	"homepage": "https://github.com/bimsonz/loopback/tree/main/packages/protocol#readme",
 	"license": "MIT",
@@ -10,14 +9,35 @@
 		"url": "git+https://github.com/bimsonz/loopback.git",
 		"directory": "packages/protocol"
 	},
+	"files": [
+		"dist",
+		"openapi",
+		"spec"
+	],
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./document": "./src/generated/document.gen.ts",
 		"./openapi.json": "./openapi/openapi.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"types": "./dist/src/index.d.ts",
+				"default": "./dist/src/index.js"
+			},
+			"./document": {
+				"types": "./dist/src/generated/document.gen.d.ts",
+				"default": "./dist/src/generated/document.gen.js"
+			},
+			"./openapi.json": "./openapi/openapi.json"
+		},
+		"access": "public"
 	},
 	"scripts": {
 		"generate": "tsp compile spec/main.tsp --config tspconfig.yaml",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
 		"@hono/zod-validator": "catalog:",

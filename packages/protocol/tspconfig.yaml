@@ -21,4 +21,5 @@ options:
       - "3.1.0"
     seal-object-schemas: true
   typespec-openapi-document:
-    emitter-output-dir: "{project-root}/../server/src/generated"
+    # Beside the document it imports, so the module and the JSON ship in one package.
+    emitter-output-dir: "{project-root}/src/generated"

@@ -8,6 +8,8 @@ coverage/
 .env.*
 !.env.example
 .cloudflare/
+# the packages' published build
+packages/*/dist/
 *.tsbuildinfo
 .DS_Store
 

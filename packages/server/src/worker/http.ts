@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import { type Context, Hono } from "hono";
 import { RegExpRouter } from "hono/router/reg-exp-router";
 import { registerRoutes, type Operations } from "../generated/app.gen.ts";
-import { openApiDocument } from "../generated/document.gen.ts";
+import { openApiDocument } from "@loopbackhq/protocol/document";
 import type { AppEnv, RouteDeps } from "../generated/runtime.gen.ts";
 import type { WorkerBindings } from "./env.ts";
 import { fileKey, Files } from "./files.ts";

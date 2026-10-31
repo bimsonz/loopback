@@ -6,6 +6,7 @@
 		".wrangler",
 		"pnpm-lock.yaml",
 		".cloudflare",
+		"packages/*/dist",
 		"**/*.gen.ts",
 		"**/openapi/openapi.json"
 	]

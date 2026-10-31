@@ -1,6 +1,6 @@
 {
 	"name": "loopback",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"private": true,
 	"description": "The deployable Loopback Worker: the server, composed with the token gate, and the web inbox.",
 	"homepage": "https://github.com/bimsonz/loopback/tree/main/apps/loopback#readme",

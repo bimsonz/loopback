@@ -44,7 +44,7 @@
 		"no-underscore-dangle": "off",
 		"unicorn/consistent-function-scoping": "off"
 	},
-	"ignorePatterns": [".wrangler", "node_modules", ".cloudflare", "**/*.gen.ts"],
+	"ignorePatterns": [".wrangler", "node_modules", ".cloudflare", "packages/*/dist", "**/*.gen.ts"],
 	"overrides": [
 		{
 			"files": ["**/test/**", "**/*.test.ts", "**/*.test.tsx"],
