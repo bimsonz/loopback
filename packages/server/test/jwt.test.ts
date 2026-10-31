@@ -313,6 +313,36 @@ describe("a deployment whose frontend routes by space", () => {
 	});
 });
 
+describe("a host composing Loopback in code", () => {
+	/** A host's environment as `wrangler types` writes it: an interface, with no index signature. */
+	interface HostEnv {
+		readonly FILES: R2Bucket;
+		readonly LOGIN_ISSUER: string;
+	}
+
+	it("configures the gate from its own environment type, and serves through it", async () => {
+		const app = createLoopback({
+			gate: jwtGate((env: HostEnv) => ({
+				jwksUrl: JWKS_URL,
+				fetcher: { fetch: async () => Response.json(jwks) },
+				issuer: env.LOGIN_ISSUER,
+				audience: [AUDIENCE],
+				spaceClaim: "workspace",
+			})),
+		});
+		const host: HostEnv = { FILES: env.FILES, LOGIN_ISSUER: ISSUER };
+		const response = await app.fetch(
+			new Request(`${ORIGIN}/api/v1/whoami`, {
+				headers: { Authorization: `Bearer ${await token()}` },
+			}),
+			host,
+			createExecutionContext(),
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ space: "acme" });
+	});
+});
+
 describe("a JWT-gated deployment whose host checks each caller", () => {
 	const asked: Array<{ client: unknown; space: string; actor: string }> = [];
 	const app = deployment(undefined, async (claims, access) => {

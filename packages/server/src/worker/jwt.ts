@@ -2,7 +2,7 @@ import { Config, Effect, Layer, Option } from "effect";
 import { createRemoteJWKSet, customFetch, errors, type JWTPayload, jwtVerify } from "jose";
 import { z } from "zod";
 import { Unauthorized } from "../domain/errors.ts";
-import type { WorkerBindings } from "./env.ts";
+import type { LoopbackBindings, WorkerBindings } from "./env.ts";
 import { WorkerEnv } from "./env.ts";
 import { type Access, credentialOf, Gate, makeTokenGate, NotConfigured } from "./gate.ts";
 
@@ -114,11 +114,19 @@ export const makeJwtGate = (options: JwtGateOptions): Gate["Service"] => {
 	});
 };
 
-/** A JWT gate configured in code, from the Worker's environment: how a host composing Loopback uses it. */
-export const jwtGate = (options: (env: WorkerBindings) => JwtGateOptions) =>
+/**
+ * A JWT gate configured in code, from the Worker's environment: how a host composing Loopback uses
+ * it. `options` may take the host's own environment type, such as the one `wrangler types` writes.
+ */
+// The parameter is what lets `options` take the host's own environment type: a function of that
+// type does not accept every LoopbackBindings, so it could not be passed as one.
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+export const jwtGate = <Env extends LoopbackBindings = WorkerBindings>(
+	options: (env: Env) => JwtGateOptions,
+) =>
 	Layer.effect(
 		Gate,
-		WorkerEnv.use((env) => Effect.sync(() => makeJwtGate(options(env)))),
+		WorkerEnv.use((env) => Effect.sync(() => makeJwtGate(options(env as unknown as Env)))),
 	);
 
 /** The settings a JWT-gated deployment reads, and the token gate's secret. */

@@ -1,5 +1,5 @@
 import type { Layer } from "effect";
-import type { WorkerBindings, WorkerEnv } from "./worker/env.ts";
+import type { LoopbackBindings, WorkerBindings, WorkerEnv } from "./worker/env.ts";
 import type { Gate } from "./worker/gate.ts";
 import { makeApp } from "./worker/http.ts";
 import { defaultInboxUrl, type InboxLink } from "./worker/mcp.ts";
@@ -32,7 +32,9 @@ export const createLoopback = (options: LoopbackOptions) => {
 		options.inboxUrl ?? defaultInboxUrl,
 	);
 	return {
-		fetch: (request: Request, env: WorkerBindings, ctx: ExecutionContext) =>
-			app.fetch(request, env, ctx),
-	} satisfies ExportedHandler<WorkerBindings>;
+		// Any environment that declares Loopback's bindings: the host's own type, such as the one
+		// `wrangler types` writes, need not say it holds nothing else.
+		fetch: (request: Request, env: LoopbackBindings, ctx: ExecutionContext) =>
+			app.fetch(request, env as unknown as WorkerBindings, ctx),
+	} satisfies ExportedHandler<LoopbackBindings>;
 };
