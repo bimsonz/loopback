@@ -10,7 +10,8 @@ service.
 pnpm add @loopbackhq/sdk
 ```
 
-The inbox in `apps/loopback` is built only on this SDK, so it is a full example to work from.
+The inbox, [`@loopbackhq/inbox`](https://www.npmjs.com/package/@loopbackhq/inbox), is built only on
+this SDK, so it is a full example to work from, or a set of components to use as they are.
 
 ## Promise client
 

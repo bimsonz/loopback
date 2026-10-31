@@ -1,22 +1,5 @@
 import { awaitingHuman, type Ask, foldBriefing, type InboxState } from "@loopbackhq/sdk";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-
-/** The ask the URL points at: `#/<id>`. */
-export const useSelectedAsk = (): string | null => {
-	const hash = useSyncExternalStore(
-		(changed) => {
-			window.addEventListener("hashchange", changed);
-			return () => window.removeEventListener("hashchange", changed);
-		},
-		() => window.location.hash,
-	);
-	const id = hash.replace(/^#\/?/, "");
-	return id === "" ? null : decodeURIComponent(id);
-};
-
-export const select = (askId: string | null) => {
-	window.location.hash = askId === null ? "" : `/${encodeURIComponent(askId)}`;
-};
+import { useEffect, useRef, useState } from "react";
 
 /**
  * The ask to open once `current` has been answered: the next one awaiting the person, below it in
@@ -34,6 +17,44 @@ export const nextAfter = (queue: readonly Ask[], current: string): string | null
  */
 export const focusOf = (inbox: InboxState, picked: string | null): string | null =>
 	picked ?? awaitingHuman(inbox)[0]?.id ?? null;
+
+/** The asks the person's own agents raised: what "Mine" shows. */
+export const onlyMine = (inbox: InboxState, me: string): InboxState => {
+	const mine = (ask: Ask) => ask.raisedBy?.id === me;
+	return { ...inbox, open: inbox.open.filter(mine), recent: inbox.recent.filter(mine) };
+};
+
+/** Whether anyone else's agents have asked here; only then is there a "Mine" to pick. */
+export const shared = (inbox: InboxState, me: string | undefined): boolean =>
+	me !== undefined &&
+	[...inbox.open, ...inbox.recent].some(
+		(ask) => ask.raisedBy !== undefined && ask.raisedBy.id !== me,
+	);
+
+/** Which asks the list shows. */
+export type Filter = "all" | "mine";
+
+const FILTER_KEY = "loopback.filter";
+
+/** Everyone's asks, or only the person's own agents', as they last left it in this browser. */
+export const useFilter = () => {
+	const [filter, setFilter] = useState<Filter>(() => {
+		try {
+			return localStorage.getItem(FILTER_KEY) === "mine" ? "mine" : "all";
+		} catch {
+			return "all";
+		}
+	});
+	const choose = (next: Filter) => {
+		setFilter(next);
+		try {
+			localStorage.setItem(FILTER_KEY, next);
+		} catch {
+			// Remembered for this tab only.
+		}
+	};
+	return [filter, choose] as const;
+};
 
 const SIDEBAR_KEY = "loopback.sidebar";
 
@@ -158,9 +179,9 @@ export const useNotifications = () => {
 
 /**
  * Keeps the person's attention where it is needed: the tab title counts what awaits them, and a
- * new ask raises a notification while the tab is in the background.
+ * new ask raises a notification while the tab is in the background. Clicking one opens the ask.
  */
-export const useAttention = (inbox: InboxState, notify: boolean) => {
+export const useAttention = (inbox: InboxState, notify: boolean, open: (askId: string) => void) => {
 	const seen = useRef<Set<string> | null>(null);
 	const waiting = awaitingHuman(inbox);
 	useEffect(() => {
@@ -180,8 +201,8 @@ export const useAttention = (inbox: InboxState, notify: boolean) => {
 			});
 			note.addEventListener("click", () => {
 				window.focus();
-				select(ask.id);
+				open(ask.id);
 			});
 		}
-	}, [inbox.status, waiting, notify]);
+	}, [inbox.status, waiting, notify, open]);
 };

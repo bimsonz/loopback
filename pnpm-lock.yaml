@@ -173,6 +173,9 @@ importers:
       '@effect/atom-react':
         specifier: 'catalog:'
         version: 4.0.6(effect@4.0.6)(react@19.3.1)(scheduler@0.28.0)
+      '@loopbackhq/inbox':
+        specifier: workspace:*
+        version: link:../../packages/inbox
       '@loopbackhq/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -191,12 +194,6 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.3.1(react@19.3.1)
-      react-markdown:
-        specifier: 'catalog:'
-        version: 10.1.0(@types/react@19.3.0)(react@19.3.1)(supports-color@10.2.2)
-      remark-gfm:
-        specifier: 'catalog:'
-        version: 4.0.1(supports-color@10.2.2)
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: 'catalog:'
@@ -237,6 +234,64 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@types/node@24.19.2)(jsdom@30.1.3)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  packages/inbox:
+    dependencies:
+      '@phosphor-icons/react':
+        specifier: 'catalog:'
+        version: 2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react-markdown:
+        specifier: 'catalog:'
+        version: 10.1.0(@types/react@19.3.0)(react@19.3.1)(supports-color@10.2.2)
+      remark-gfm:
+        specifier: 'catalog:'
+        version: 4.0.1(supports-color@10.2.2)
+    devDependencies:
+      '@cloudflare/kumo':
+        specifier: 'catalog:'
+        version: 2.15.0(@date-fns/tz@1.5.0)(@phosphor-icons/react@2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
+      '@effect/atom-react':
+        specifier: 'catalog:'
+        version: 4.0.6(effect@4.0.6)(react@19.3.1)(scheduler@0.28.0)
+      '@loopbackhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@testing-library/jest-dom':
+        specifier: 'catalog:'
+        version: 7.0.1(@testing-library/dom@10.4.2)(vitest@5.0.5(@types/node@24.19.2)(jsdom@30.1.3)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))
+      '@testing-library/react':
+        specifier: 'catalog:'
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@testing-library/user-event':
+        specifier: 'catalog:'
+        version: 14.6.8(@testing-library/dom@10.4.2)
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: 'catalog:'
+        version: 6.1.2(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.6
+      jsdom:
+        specifier: 'catalog:'
+        version: 30.1.3
+      react:
+        specifier: 'catalog:'
+        version: 19.3.1
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.3.1(react@19.3.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
       vitest:
         specifier: 'catalog:'
         version: 5.0.5(@types/node@24.19.2)(jsdom@30.1.3)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))

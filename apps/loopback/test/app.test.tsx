@@ -2,7 +2,7 @@ import { RegistryProvider } from "@effect/atom-react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/web/App.tsx";
-import { tokenAtom } from "../src/web/state.ts";
+import { tokenAtom } from "../src/web/session.ts";
 
 /** A server that answers `whoami` with `status`, and refuses everything else. */
 const serving = (whoami: number) => {

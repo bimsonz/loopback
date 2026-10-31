@@ -10,10 +10,11 @@ import {
 	X,
 } from "@phosphor-icons/react";
 import { Cause, Exit } from "effect";
-import { Component, type ReactNode, useEffect, useState } from "react";
+import { Component, type ReactNode, useState } from "react";
 import { BriefingBody } from "./briefing.tsx";
 import { Blocks, Prose } from "./content.tsx";
-import { age, SEND_KEY, select, useNow } from "./hooks.ts";
+import { AskLink, useClient, useInboxKeys, useNavigation } from "./context.tsx";
+import { age, SEND_KEY, useNow } from "./hooks.ts";
 import { KindIcon, Waiting } from "./list.tsx";
 import { useMe, whoIs } from "./people.ts";
 import { replyAtom } from "./state.ts";
@@ -63,7 +64,7 @@ function Turn({ entry, now }: { readonly entry: Entry; readonly now: number }) {
 
 /** The reply controls: one box for words, and the moves this kind of ask allows. */
 function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
-	const send = useAtomSet(replyAtom, { mode: "promiseExit" });
+	const send = useAtomSet(replyAtom(useClient()), { mode: "promiseExit" });
 	const [text, setText] = useState("");
 	const [picked, setPicked] = useState<readonly string[]>([]);
 	const [sending, setSending] = useState<string | null>(null);
@@ -122,24 +123,20 @@ function ReplyPanel({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 
 	// ⌘↵ (Ctrl↵ off Apple's keyboards) sends the main reply wherever focus is, since an ask that opens by itself has nothing
 	// focused; 1-9 pick a choice while the reply box does not have focus.
-	useEffect(() => {
-		const onKey = (event: globalThis.KeyboardEvent) => {
-			if (busy) return;
-			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-				const move = primary();
-				if (move === null) return;
-				event.preventDefault();
-				void submit(...move);
-				return;
-			}
-			const target = event.target as HTMLElement | null;
-			if (question === null || event.metaKey || event.ctrlKey) return;
-			if (target?.closest("input, textarea, [contenteditable]")) return;
-			const option = question.prompt.options[Number(event.key) - 1];
-			if (option !== undefined) choose(option.label);
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
+	useInboxKeys((event) => {
+		if (busy) return;
+		if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+			const move = primary();
+			if (move === null) return;
+			event.preventDefault();
+			void submit(...move);
+			return;
+		}
+		const target = event.target as HTMLElement | null;
+		if (question === null || event.metaKey || event.ctrlKey) return;
+		if (target?.closest("input, textarea, [contenteditable]")) return;
+		const option = question.prompt.options[Number(event.key) - 1];
+		if (option !== undefined) choose(option.label);
 	});
 
 	return (
@@ -300,7 +297,8 @@ const nothing = () => {};
 
 /** An ask the inbox could not draw, with the one move still open to the person: dismissing it. */
 function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
-	const send = useAtomSet(replyAtom, { mode: "promiseExit" });
+	const { onSelect } = useNavigation();
+	const send = useAtomSet(replyAtom(useClient()), { mode: "promiseExit" });
 	const [sending, setSending] = useState(false);
 	const [failed, setFailed] = useState<string | null>(null);
 	const dismiss = async () => {
@@ -319,7 +317,7 @@ function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 		<article className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:px-8">
 			<button
 				type="button"
-				onClick={() => select(null)}
+				onClick={() => onSelect(null)}
 				className="inline-flex w-fit items-center gap-1 text-sm text-kumo-subtle md:hidden"
 			>
 				<ArrowLeft /> Inbox
@@ -395,6 +393,7 @@ export function AskDetail({
 
 /** One ask: what the agent wants, the thread so far, and the moves left. */
 function AskView({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
+	const { onSelect } = useNavigation();
 	const now = useNow();
 	const me = useMe();
 	const status = STATUS[ask.status];
@@ -403,7 +402,7 @@ function AskView({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: ()
 			<header className="flex flex-col gap-3">
 				<button
 					type="button"
-					onClick={() => select(null)}
+					onClick={() => onSelect(null)}
 					className="inline-flex w-fit items-center gap-1 text-sm text-kumo-subtle md:hidden"
 				>
 					<ArrowLeft /> Inbox
@@ -431,12 +430,9 @@ function AskView({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: ()
 							{ask.prompt.title}
 						</Text>
 						{ask.kind !== "review" || ask.revises === undefined ? null : (
-							<a
-								href={`#/${encodeURIComponent(ask.revises)}`}
-								className="text-sm text-kumo-link underline"
-							>
+							<AskLink askId={ask.revises} className="text-sm text-kumo-link underline">
 								Revises an earlier review
-							</a>
+							</AskLink>
 						)}
 						{ask.prompt.summary === undefined ? null : (
 							<div className="text-kumo-subtle">

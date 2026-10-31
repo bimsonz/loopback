@@ -23,14 +23,13 @@
 	"dependencies": {
 		"@cloudflare/kumo": "catalog:",
 		"@effect/atom-react": "catalog:",
+		"@loopbackhq/inbox": "workspace:*",
 		"@loopbackhq/sdk": "workspace:*",
 		"@loopbackhq/server": "workspace:*",
 		"@phosphor-icons/react": "catalog:",
 		"effect": "catalog:",
 		"react": "catalog:",
-		"react-dom": "catalog:",
-		"react-markdown": "catalog:",
-		"remark-gfm": "catalog:"
+		"react-dom": "catalog:"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:",

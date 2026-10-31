@@ -27,6 +27,7 @@ import { Blocks, Prose } from "./content.tsx";
 import { SEND_KEY, useNow } from "./hooks.ts";
 import { useMe, whoIs } from "./people.ts";
 import { replyAtom } from "./state.ts";
+import { useClient, useInboxKeys } from "./context.tsx";
 import { AgentSaid, PersonSaid } from "./thread.tsx";
 
 /** What the person has written on a point, and whether they mean to resolve it, before sending. */
@@ -318,7 +319,7 @@ export function BriefingBody({
 	readonly onReplied: () => void;
 }) {
 	const now = useNow();
-	const send = useAtomSet(replyAtom, { mode: "promiseExit" });
+	const send = useAtomSet(replyAtom(useClient()), { mode: "promiseExit" });
 	const basis = ask.thread.length;
 	const { drafts, update, clear } = useDrafts(ask.id, basis);
 	const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
@@ -399,14 +400,10 @@ export function BriefingBody({
 	const canSend = !busy && yourMove && items.length > 0 && problem === null;
 
 	// ⌘↵ (Ctrl↵ off Apple's keyboards) sends, as it does on every other ask.
-	useEffect(() => {
-		const onKey = (event: globalThis.KeyboardEvent) => {
-			if (!canSend || event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
-			event.preventDefault();
-			void submit("send", reply);
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
+	useInboxKeys((event) => {
+		if (!canSend || event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+		event.preventDefault();
+		void submit("send", reply);
 	});
 
 	return (

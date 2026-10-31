@@ -132,9 +132,11 @@ through a REST API and an event socket. Images go to R2.
 
 ## Build your own inbox
 
-The web inbox in `apps/loopback` is built only on `@loopbackhq/sdk`, a client for the REST calls,
-the live event socket and the inbox state, with a promise API for any framework and an Effect
-service. [`packages/sdk`](packages/sdk/README.md) explains how to use it. The API is also described
+The web inbox is published as React components, [`@loopbackhq/inbox`](packages/inbox/README.md), to
+render inside an app of your own: it reads and answers through the client you hand it, and moves
+between asks through your routes. It is built only on `@loopbackhq/sdk`, a client for the REST
+calls, the live event socket and the inbox state, with a promise API for any framework and an
+Effect service, which [`packages/sdk`](packages/sdk/README.md) explains. The API is also described
 by an OpenAPI document, served at `/api/v1/openapi.json`, for clients in any language.
 
 ## Hosting for many people
@@ -160,7 +162,8 @@ pnpm generate         # regenerate the API from its TypeSpec definition
 | `packages/protocol`        | The API contract, in TypeSpec, and what is generated from it: types and the OpenAPI document. |
 | `packages/server`          | The server: Durable Object, HTTP API, event socket and MCP tools, written in Effect.          |
 | `packages/sdk`             | A client for building your own inbox, in any framework.                                       |
-| `apps/loopback`            | The deployable Worker and the web inbox.                                                      |
+| `packages/inbox`           | The web inbox as React components, built on the SDK.                                          |
+| `apps/loopback`            | The deployable Worker, and the inbox page it serves: sign-in, header and routing.             |
 | `integrations/claude-code` | The Claude Code plugin.                                                                       |
 
 ## Contributing

@@ -1,10 +1,9 @@
-import { RegistryProvider } from "@effect/atom-react";
 import { type Ask, type Entry, numberBriefing, type Reply } from "@loopbackhq/sdk";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AskDetail } from "../src/web/detail.tsx";
-import { tokenAtom } from "../src/web/state.ts";
+import { AskDetail } from "../src/detail.tsx";
+import { Host } from "./host.tsx";
 
 const prompt = numberBriefing({
 	title: "What the migration changes",
@@ -68,9 +67,9 @@ afterEach(() => {
 
 const show = (ask: Ask) =>
 	render(
-		<RegistryProvider initialValues={[[tokenAtom, "token"]]}>
+		<Host>
 			<AskDetail ask={ask} />
-		</RegistryProvider>,
+		</Host>,
 	);
 
 /** A point's folded line, found by its title. */
@@ -194,9 +193,9 @@ describe("a briefing", () => {
 			at: "2026-10-30T10:01:00.000Z",
 		};
 		const { rerender } = render(
-			<RegistryProvider initialValues={[[tokenAtom, "token"]]}>
+			<Host>
 				<AskDetail ask={briefing([replied], "awaiting_agent")} />
-			</RegistryProvider>,
+			</Host>,
 		);
 		await user.click(screen.getByRole("button", { name: "Resolved · 1" }));
 		await user.type(
@@ -204,14 +203,14 @@ describe("a briefing", () => {
 			"Actually, which bucket?",
 		);
 		rerender(
-			<RegistryProvider initialValues={[[tokenAtom, "token"]]}>
+			<Host>
 				<AskDetail
 					ask={briefing([
 						replied,
 						{ author: "agent", answer: "Queries.", point: "1", at: "2026-10-30T10:02:00.000Z" },
 					])}
 				/>
-			</RegistryProvider>,
+			</Host>,
 		);
 		await user.click(screen.getByRole("button", { name: "Send 1 reply" }));
 		await waitFor(() => expect(sent).toHaveLength(1));

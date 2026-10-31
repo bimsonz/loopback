@@ -135,7 +135,9 @@ A ticket is spent on use and lapses within a minute, so the copy Cloudflare logs
 of no use; the token itself never leaves the header, which Cloudflare redacts. A client that can set
 headers may instead send `Authorization` with the upgrade.
 `@loopbackhq/sdk` wraps the REST calls and the socket, reconnects with backoff, and folds events
-into an inbox state with a pure reducer. The web inbox in `apps/loopback` is built only on it.
+into an inbox state with a pure reducer. The web inbox, `@loopbackhq/inbox`, is built only on it: its
+state is kept per client, so handing it another client follows another space, and which ask is
+open is the host's to keep. `apps/loopback` serves it with a token sign-in and fragment routing.
 
 ## Images
 

@@ -2,7 +2,8 @@ import { type Ask, type InboxState, numberBriefing } from "@loopbackhq/sdk";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { AskList } from "../src/web/list.tsx";
+import { AskList } from "../src/list.tsx";
+import { Host } from "./host.tsx";
 
 const ask = (id: string, status: Ask["status"]): Ask => ({
 	kind: "question",
@@ -31,6 +32,7 @@ describe("the ask list", () => {
 				inbox={inbox([ask("mine", "awaiting_human")], [ask("done", "closed")])}
 				selected={null}
 			/>,
+			{ wrapper: Host },
 		);
 		expect(screen.getByText("Question mine?")).toBeInTheDocument();
 		const recent = screen.getByRole("button", { name: /Recent/ });
@@ -50,7 +52,9 @@ describe("the ask list", () => {
 	});
 
 	it("says so when nothing needs the person", () => {
-		render(<AskList inbox={inbox([], [ask("done", "closed")])} selected={null} />);
+		render(<AskList inbox={inbox([], [ask("done", "closed")])} selected={null} />, {
+			wrapper: Host,
+		});
 		expect(screen.getByText("Nothing needs you right now.")).toBeInTheDocument();
 	});
 
@@ -63,7 +67,7 @@ describe("the ask list", () => {
 				sections: [{ points: [{ title: "One" }, { title: "Two" }] }],
 			}),
 		};
-		render(<AskList inbox={inbox([briefing], [])} selected={null} />);
+		render(<AskList inbox={inbox([briefing], [])} selected={null} />, { wrapper: Host });
 		expect(screen.getByText("What changes")).toBeInTheDocument();
 		expect(screen.getByText("2 need you")).toBeInTheDocument();
 	});

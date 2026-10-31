@@ -1,10 +1,9 @@
-import { RegistryProvider } from "@effect/atom-react";
 import type { Ask, Reply } from "@loopbackhq/sdk";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AskDetail } from "../src/web/detail.tsx";
-import { tokenAtom } from "../src/web/state.ts";
+import { AskDetail } from "../src/detail.tsx";
+import { Host } from "./host.tsx";
 
 const base = {
 	waiting: true,
@@ -54,9 +53,9 @@ afterEach(() => {
 
 const show = (ask: Ask) =>
 	render(
-		<RegistryProvider initialValues={[[tokenAtom, "token"]]}>
+		<Host>
 			<AskDetail ask={ask} />
-		</RegistryProvider>,
+		</Host>,
 	);
 
 describe("answering a question", () => {
@@ -151,9 +150,9 @@ describe("moving on", () => {
 		const user = userEvent.setup();
 		const replied = vi.fn<() => void>();
 		render(
-			<RegistryProvider initialValues={[[tokenAtom, "token"]]}>
+			<Host>
 				<AskDetail ask={review} onReplied={replied} />
-			</RegistryProvider>,
+			</Host>,
 		);
 		await user.type(screen.getByRole("textbox"), "Not yet");
 		expect(replied).not.toHaveBeenCalled();
@@ -168,9 +167,9 @@ describe("moving on", () => {
 		const user = userEvent.setup();
 		const replied = vi.fn<() => void>();
 		render(
-			<RegistryProvider initialValues={[[tokenAtom, "token"]]}>
+			<Host>
 				<AskDetail ask={review} onReplied={replied} />
-			</RegistryProvider>,
+			</Host>,
 		);
 		await user.type(screen.getByRole("textbox"), "Ship it");
 		await user.click(screen.getByRole("button", { name: "Approve" }));

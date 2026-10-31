@@ -1,5 +1,5 @@
-import { type ApiError, initialInbox, make, type LoopbackApi, type Reply } from "@loopbackhq/sdk";
-import { Effect, Stream } from "effect";
+import { make, type LoopbackApi } from "@loopbackhq/sdk";
+import { Effect } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 const TOKEN_KEY = "loopback.token";
@@ -59,52 +59,7 @@ export const clientAtom = Atom.readable((get): LoopbackApi | null => {
 	return AsyncResult.getOrElse(get(hostedAtom), () => false) ? hostedClient() : null;
 });
 
-/** The inbox, followed live while anything renders it. */
-export const inboxAtom = Atom.make(
-	(get) => {
-		const client = get(clientAtom);
-		return client === null ? Stream.empty : client.inbox;
-	},
-	{ initialValue: initialInbox },
-);
-
-/** Who the inbox is signed in as: the person whose replies read as "you". */
-export const meAtom = Atom.make((get) => {
-	const client = get(clientAtom);
-	return client === null
-		? Effect.succeed(undefined)
-		: client.whoami.pipe(
-				Effect.map((whoami) => whoami.actor.id),
-				Effect.catch(() => Effect.succeed(undefined)),
-			);
-});
-
 /** Checks a token before keeping it: the space it opens, or why it was refused. */
 export const signInAtom = Atom.fn((token: string) =>
 	Effect.map(clientFor(token).whoami, (whoami) => ({ token, space: whoami.space })),
-);
-
-/** Sends a reply to an ask. */
-export const replyAtom = Atom.fn(
-	(
-		input: { readonly askId: string; readonly reply: Reply },
-		get,
-	): Effect.Effect<unknown, ApiError> => {
-		const client = get(clientAtom);
-		return client === null
-			? Effect.die(new Error("Not signed in."))
-			: client.reply(input.askId, input.reply);
-	},
-);
-
-/** An uploaded image as an object URL, released when nothing shows it any more. */
-export const imageAtom = Atom.family((uploadId: string) =>
-	Atom.make((get) => {
-		const client = get(clientAtom);
-		if (client === null) return Effect.die(new Error("Not signed in."));
-		return Effect.acquireRelease(
-			Effect.map(client.file(uploadId), (blob) => URL.createObjectURL(blob)),
-			(url) => Effect.sync(() => URL.revokeObjectURL(url)),
-		);
-	}),
 );

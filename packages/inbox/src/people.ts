@@ -1,11 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { Actor } from "@loopbackhq/sdk";
 import { AsyncResult } from "effect/reactivity";
+import { useClient } from "./context.tsx";
 import { meAtom } from "./state.ts";
 
 /** Who the inbox is signed in as, once it knows. */
 export const useMe = (): string | undefined =>
-	AsyncResult.getOrElse(useAtomValue(meAtom), () => undefined);
+	AsyncResult.getOrElse(useAtomValue(meAtom(useClient())), () => undefined);
 
 /**
  * Someone the deployment named, as the person reading sees them: "You" for themselves, and for anyone

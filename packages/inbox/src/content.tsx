@@ -6,6 +6,7 @@ import { AsyncResult } from "effect/reactivity";
 import type { ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useClient } from "./context.tsx";
 import { imageAtom } from "./state.ts";
 
 /** The text inside a markdown node, which react-markdown hands over as children. */
@@ -30,7 +31,7 @@ const markdownComponents: Components = {
 /** Markdown an agent wrote. Links open in a new tab; fenced code is highlighted. */
 export function Prose({ text }: { readonly text: string }) {
 	return (
-		<div className="markdown text-kumo-default">
+		<div className="loopback-markdown text-kumo-default">
 			<Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
 				{text}
 			</Markdown>
@@ -47,7 +48,7 @@ function Caption({ children }: { readonly children: string }) {
 }
 
 function Picture({ uploadId, caption }: { readonly uploadId: string; readonly caption?: string }) {
-	const result = useAtomValue(imageAtom(uploadId));
+	const result = useAtomValue(imageAtom(useClient())(uploadId));
 	if (AsyncResult.isFailure(result))
 		return <Text variant="error">This image could not be loaded.</Text>;
 	if (!AsyncResult.isSuccess(result)) {

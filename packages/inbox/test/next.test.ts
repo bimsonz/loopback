@@ -1,6 +1,6 @@
 import type { Ask } from "@loopbackhq/sdk";
 import { describe, expect, it } from "vitest";
-import { focusOf, nextAfter } from "../src/web/hooks.ts";
+import { focusOf, nextAfter } from "../src/hooks.ts";
 
 const ask = (id: string): Ask => ({
 	kind: "question",

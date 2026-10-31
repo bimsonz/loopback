@@ -1,6 +1,7 @@
 import { Badge, Text } from "@cloudflare/kumo";
 import type { Ask, InboxState } from "@loopbackhq/sdk";
 import { CaretDown, CaretRight, ChatCircleDots, Eye, ListBullets } from "@phosphor-icons/react";
+import { AskLink } from "./context.tsx";
 import { age, headline, pointsNeedingYou, useNow, useRecentOpen } from "./hooks.ts";
 
 export function KindIcon({ ask }: { readonly ask: Ask }) {
@@ -41,8 +42,8 @@ function Row({
 }) {
 	const needing = pointsNeedingYou(ask);
 	return (
-		<a
-			href={`#/${encodeURIComponent(ask.id)}`}
+		<AskLink
+			askId={ask.id}
 			aria-current={selected ? "page" : undefined}
 			className={`flex gap-3 border-b border-kumo-hairline px-4 py-3 transition-colors hover:bg-kumo-tint ${
 				selected ? "bg-kumo-tint" : ""
@@ -66,7 +67,7 @@ function Row({
 					<Waiting ask={ask} />
 				</span>
 			</span>
-		</a>
+		</AskLink>
 	);
 }
 
