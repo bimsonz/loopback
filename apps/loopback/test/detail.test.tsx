@@ -138,6 +138,7 @@ describe("an ask the inbox cannot draw", () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		show(broken);
 		expect(screen.getByText(/This ask can't be shown/)).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /Inbox/ })).toBeInTheDocument();
 		await user.click(screen.getByRole("button", { name: "Dismiss" }));
 		await waitFor(() => expect(sent).toHaveLength(1));
 		expect(sent[0]?.url).toMatch(/\/api\/v1\/asks\/r9\/reply$/);

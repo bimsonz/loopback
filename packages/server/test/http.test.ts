@@ -6,6 +6,7 @@ import { Cause, ConfigProvider, Effect, Exit, Layer } from "effect";
 import { DEFAULT_SPACE, Gate, TokenGate, WorkerEnv } from "../src/index.ts";
 import packageJson from "../package.json" with { type: "json" };
 import { UploadIncomplete } from "../src/domain/errors.ts";
+import { REPAIR_CONTENTLESS_REVIEWS } from "../src/space/migrations.ts";
 import { spaceClient } from "../src/space/rpc.ts";
 import { Files } from "../src/worker/files.ts";
 
@@ -115,6 +116,42 @@ describe("an invoker that vouches for its caller", () => {
 		});
 		expect(response.status).toBe(500);
 		expect(await response.json()).toMatchObject({ code: "server.not_configured" });
+	});
+});
+
+describe("a review a deploy left without content", () => {
+	it("is repaired, so it can be read and dismissed", async () => {
+		const ask = await Effect.runPromise(
+			space.open({
+				actor: OWNER,
+				kind: "review",
+				input: {
+					title: "Lost in a deploy",
+					content: [{ type: "markdown", text: "Here." }],
+					project: "http-test",
+				},
+			}),
+		);
+		const stub = exports.Space.get(exports.Space.idFromName(DEFAULT_SPACE));
+		// What a space on code from before briefings kept for one: a review's prompt, without content.
+		await runInDurableObject(stub, (_object, state) => {
+			state.storage.sql.exec(
+				"UPDATE asks SET prompt = json_remove(prompt, '$.content') WHERE id = ?",
+				ask.id,
+			);
+		});
+		expect((await api(`/asks/${ask.id}`)).status).toBe(500);
+		await runInDurableObject(stub, (_object, state) => {
+			state.storage.sql.exec(REPAIR_CONTENTLESS_REVIEWS);
+		});
+		const read = await api(`/asks/${ask.id}`);
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({
+			prompt: { content: [{ type: "markdown", text: expect.stringMatching(/was lost/) }] },
+		});
+		const dismissed = await api(`/asks/${ask.id}/reply`, json({ outcome: "dismissed" }));
+		expect(dismissed.status).toBe(200);
+		expect((await api("/snapshot")).status).toBe(200);
 	});
 });
 

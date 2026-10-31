@@ -317,6 +317,13 @@ function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied:
 	};
 	return (
 		<article className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:px-8">
+			<button
+				type="button"
+				onClick={() => select(null)}
+				className="inline-flex w-fit items-center gap-1 text-sm text-kumo-subtle md:hidden"
+			>
+				<ArrowLeft /> Inbox
+			</button>
 			<Banner
 				variant="error"
 				icon={<WarningCircle />}

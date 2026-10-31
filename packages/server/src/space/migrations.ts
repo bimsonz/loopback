@@ -2,6 +2,21 @@ import { SqliteMigrator } from "@effect/sql-sqlite-do";
 import { Effect } from "effect";
 import { SqlClient, Migrator } from "effect/sql";
 
+/**
+ * Gives every review kept without content a note saying so. A space still on code from before
+ * briefings, reached during a deploy by a Worker that knew them, kept a briefing as a review with
+ * no content: a record the contract refuses, which no inbox could show and no reply could return.
+ */
+export const REPAIR_CONTENTLESS_REVIEWS = `
+	UPDATE asks
+	SET prompt = json_set(
+		prompt,
+		'$.content',
+		json('[{"type":"markdown","text":"This arrived while Loopback was being updated, and what it showed was lost. Dismiss it, and the agent can send it again."}]')
+	)
+	WHERE kind = 'review' AND json_extract(prompt, '$.content') IS NULL
+`;
+
 /** The space's schema, applied in order when its object starts. Never edit one that has shipped. */
 export const migrations = SqliteMigrator.layer({
 	loader: Migrator.fromRecord({
@@ -77,6 +92,10 @@ export const migrations = SqliteMigrator.layer({
 			const sql = yield* SqlClient.SqlClient;
 			// Whose agent asked, as the gate named them; asks opened before it was recorded have none.
 			yield* sql`ALTER TABLE asks ADD COLUMN raised_by TEXT`;
+		}),
+		"0005_repair_contentless_reviews": Effect.gen(function* () {
+			const sql = yield* SqlClient.SqlClient;
+			yield* sql.unsafe(REPAIR_CONTENTLESS_REVIEWS);
 		}),
 	}),
 });
