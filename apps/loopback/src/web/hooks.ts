@@ -1,4 +1,4 @@
-import { awaitingHuman, type Ask, type InboxState } from "@loopbackhq/sdk";
+import { awaitingHuman, type Ask, foldBriefing, type InboxState } from "@loopbackhq/sdk";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /** The ask the URL points at: `#/<id>`. */
@@ -95,6 +95,15 @@ export const useRecentOpen = () => {
 /** The kind of thing an ask is, in a few words. */
 export const headline = (ask: Ask): string =>
 	ask.kind === "question" ? ask.prompt.question : ask.prompt.title;
+
+/** How many of a briefing's points need the person; none for any other ask, or when it is not their move. */
+export const pointsNeedingYou = (ask: Ask): number =>
+	ask.kind === "briefing" && ask.status === "awaiting_human"
+		? foldBriefing(ask.prompt, ask.thread).needsYou
+		: 0;
+
+/** The modifier that sends with ↵, as the keyboard labels it: ⌘ on Apple's, Ctrl elsewhere. */
+export const SEND_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 
 /** "just now", "5 min", "3 h", "2 d". */
 export const age = (iso: string, now: number): string => {

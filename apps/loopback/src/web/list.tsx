@@ -1,14 +1,17 @@
 import { Badge, Text } from "@cloudflare/kumo";
 import type { Ask, InboxState } from "@loopbackhq/sdk";
-import { CaretDown, CaretRight, ChatCircleDots, Eye } from "@phosphor-icons/react";
-import { age, headline, useNow, useRecentOpen } from "./hooks.ts";
+import { CaretDown, CaretRight, ChatCircleDots, Eye, ListBullets } from "@phosphor-icons/react";
+import { age, headline, pointsNeedingYou, useNow, useRecentOpen } from "./hooks.ts";
 
 export function KindIcon({ ask }: { readonly ask: Ask }) {
-	return ask.kind === "question" ? (
-		<ChatCircleDots size={18} weight="duotone" aria-label="Question" />
-	) : (
-		<Eye size={18} weight="duotone" aria-label="Review" />
-	);
+	switch (ask.kind) {
+		case "question":
+			return <ChatCircleDots size={18} weight="duotone" aria-label="Question" />;
+		case "review":
+			return <Eye size={18} weight="duotone" aria-label="Review" />;
+		case "briefing":
+			return <ListBullets size={18} weight="duotone" aria-label="Briefing" />;
+	}
 }
 
 /** Whether an agent is blocked on the ask right now. */
@@ -36,6 +39,7 @@ function Row({
 	readonly selected: boolean;
 	readonly now: number;
 }) {
+	const needing = pointsNeedingYou(ask);
 	return (
 		<a
 			href={`#/${encodeURIComponent(ask.id)}`}
@@ -58,6 +62,7 @@ function Row({
 				</span>
 				<span className="flex flex-wrap items-center gap-2">
 					{ask.project === undefined ? null : <Badge variant="neutral">{ask.project}</Badge>}
+					{needing === 0 ? null : <Badge variant="orange">{needing} need you</Badge>}
 					<Waiting ask={ask} />
 				</span>
 			</span>

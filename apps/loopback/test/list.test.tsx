@@ -1,4 +1,4 @@
-import type { Ask, InboxState } from "@loopbackhq/sdk";
+import { type Ask, type InboxState, numberBriefing } from "@loopbackhq/sdk";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
@@ -52,5 +52,19 @@ describe("the ask list", () => {
 	it("says so when nothing needs the person", () => {
 		render(<AskList inbox={inbox([], [ask("done", "closed")])} selected={null} />);
 		expect(screen.getByText("Nothing needs you right now.")).toBeInTheDocument();
+	});
+
+	it("shows how many points of a briefing need the person", () => {
+		const briefing: Ask = {
+			...ask("b", "awaiting_human"),
+			kind: "briefing",
+			prompt: numberBriefing({
+				title: "What changes",
+				sections: [{ points: [{ title: "One" }, { title: "Two" }] }],
+			}),
+		};
+		render(<AskList inbox={inbox([briefing], [])} selected={null} />);
+		expect(screen.getByText("What changes")).toBeInTheDocument();
+		expect(screen.getByText("2 need you")).toBeInTheDocument();
 	});
 });

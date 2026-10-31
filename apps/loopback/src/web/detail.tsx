@@ -1,13 +1,6 @@
 import { Badge, Banner, Button, InputArea, Text } from "@cloudflare/kumo";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import {
-	type Actor,
-	ApiError,
-	type Ask,
-	type Entry,
-	type QuestionAsk,
-	type Reply,
-} from "@loopbackhq/sdk";
+import { useAtomSet } from "@effect/atom-react";
+import { ApiError, type Ask, type Entry, type QuestionAsk, type Reply } from "@loopbackhq/sdk";
 import {
 	ArrowLeft,
 	Check,
@@ -17,32 +10,20 @@ import {
 	X,
 } from "@phosphor-icons/react";
 import { Cause, Exit } from "effect";
-import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
+import { BriefingBody } from "./briefing.tsx";
 import { Blocks, Prose } from "./content.tsx";
-import { age, select, useNow } from "./hooks.ts";
+import { age, SEND_KEY, select, useNow } from "./hooks.ts";
 import { KindIcon, Waiting } from "./list.tsx";
-import { meAtom, replyAtom } from "./state.ts";
+import { useMe, whoIs } from "./people.ts";
+import { replyAtom } from "./state.ts";
+import { AgentSaid, PersonSaid } from "./thread.tsx";
 
 const STATUS = {
 	awaiting_human: { label: "Your turn", variant: "orange" },
 	awaiting_agent: { label: "Waiting on the agent", variant: "neutral" },
 	closed: { label: "Closed", variant: "green" },
 } as const;
-
-/** The modifier that sends with ↵, as the keyboard labels it: ⌘ on Apple's, Ctrl elsewhere. */
-const SEND_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
-
-/** Who the inbox is signed in as, once it knows. */
-const useMe = (): string | undefined =>
-	AsyncResult.getOrElse(useAtomValue(meAtom), () => undefined);
-
-/**
- * Someone the deployment named, as the person reading sees them: "You" for themselves, and for anyone
- * the deployment could not name, as on a single-person inbox; otherwise their name.
- */
-const whoIs = (actor: Actor | undefined, me: string | undefined): string =>
-	actor === undefined || actor.id === me || actor.name === undefined ? "You" : actor.name;
 
 /** A reply in the words of the person who gave it. */
 const said = (reply: Reply, who: string): { readonly title: string; readonly body?: string } => {
@@ -64,31 +45,20 @@ const said = (reply: Reply, who: string): { readonly title: string; readonly bod
 			return { title: `${who} asked`, body: reply.question };
 		case "dismissed":
 			return { title: `${who} dismissed this` };
+		case "responded":
+			return {
+				title: `${who} replied on ${reply.points.length} ${reply.points.length === 1 ? "point" : "points"}`,
+			};
 	}
 };
 
 function Turn({ entry, now }: { readonly entry: Entry; readonly now: number }) {
 	const me = useMe();
 	if (entry.author === "agent") {
-		return (
-			<div className="flex flex-col gap-3 rounded-lg border border-kumo-line bg-kumo-base p-4">
-				<Text variant="secondary" size="sm">
-					The agent answered · {age(entry.at, now)}
-				</Text>
-				<Prose text={entry.answer} />
-				{entry.content === undefined ? null : <Blocks blocks={entry.content} />}
-			</div>
-		);
+		return <AgentSaid answer={entry.answer} content={entry.content} at={entry.at} now={now} />;
 	}
 	const { title, body } = said(entry.reply, whoIs(entry.by, me));
-	return (
-		<div className="ml-auto flex max-w-[85%] flex-col gap-1 rounded-lg bg-kumo-tint p-4">
-			<Text size="sm" bold>
-				{title} · <span className="font-normal text-kumo-subtle">{age(entry.at, now)}</span>
-			</Text>
-			{body === undefined ? null : <Prose text={body} />}
-		</div>
-	);
+	return <PersonSaid title={title} body={body} at={entry.at} now={now} />;
 }
 
 /** The reply controls: one box for words, and the moves this kind of ask allows. */
@@ -372,7 +342,7 @@ export function AskDetail({
 						<Text variant="heading" as="h1">
 							{ask.prompt.title}
 						</Text>
-						{ask.revises === undefined ? null : (
+						{ask.kind !== "review" || ask.revises === undefined ? null : (
 							<a
 								href={`#/${encodeURIComponent(ask.revises)}`}
 								className="text-sm text-kumo-link underline"
@@ -389,7 +359,9 @@ export function AskDetail({
 				)}
 			</header>
 
-			{ask.kind === "question" ? (
+			{ask.kind === "briefing" ? (
+				<BriefingBody key={ask.id} ask={ask} onReplied={onReplied} />
+			) : ask.kind === "question" ? (
 				ask.prompt.context === undefined ? null : (
 					<details className="rounded-lg border border-kumo-line bg-kumo-base p-4">
 						<summary className="cursor-pointer text-sm text-kumo-subtle">Context</summary>
@@ -404,7 +376,7 @@ export function AskDetail({
 				</div>
 			)}
 
-			{ask.thread.length === 0 ? null : (
+			{ask.kind === "briefing" || ask.thread.length === 0 ? null : (
 				<div className="flex flex-col gap-3">
 					{ask.thread.map((entry) => (
 						<Turn key={`${entry.author}:${entry.at}`} entry={entry} now={now} />
@@ -412,7 +384,7 @@ export function AskDetail({
 				</div>
 			)}
 
-			{ask.status === "awaiting_human" ? (
+			{ask.kind === "briefing" ? null : ask.status === "awaiting_human" ? (
 				<ReplyPanel key={`${ask.id}:${ask.thread.length}`} ask={ask} onReplied={onReplied} />
 			) : ask.status === "awaiting_agent" ? (
 				<Text variant="secondary">The agent has your question and will answer here.</Text>
