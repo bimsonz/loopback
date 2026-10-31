@@ -75,11 +75,13 @@ logic changes as well as shapes. A tab only has to read the messages.
 ### 1. Worker → space
 
 - Every call carries `{ revision, build }`.
-- **A space whose build is older than its caller's restarts itself** (`ctx.abort()`), before it
-  runs anything. Today the Worker retries only the operations that are safe to run twice, so a reply
-  would not be retried. Because the space refused before running the operation, every operation is
-  safe to try again in this one case, and the Worker retries it on a fresh instance running the new
-  code.
+- **A space whose build is older than its caller's refuses the call, then restarts itself.** It
+  answers with a typed `Outdated` refusal before running anything, and only then calls
+  `ctx.abort()`. Cloudflare doesn't document whether a call interrupted by `abort` is marked
+  retryable, so the space answers first rather than leave the caller to read the platform's error.
+- **The Worker retries any operation refused as `Outdated`,** on a fresh stub, with the backoff it
+  already uses. Today it retries only the operations that are safe to run twice, so a reply would
+  not be retried; an `Outdated` refusal means nothing ran, so every operation is safe to try again.
 - A space whose build is newer than its caller's carries on: a Worker isolate still finishing on the
   old code. It accepts every older revision and upgrades the arguments.
 - **Each operation decodes its arguments** against an input schema before running. A call naming a
@@ -127,10 +129,17 @@ TypeSpec stays the source:
 1. The contract declares its revisions with `@typespec/versioning` (`@versioned`, `@added`,
    `@removed`, `@renamedFrom`, `@typeChangedFrom`). Today's contract becomes revision 1.
 2. `@typespec/openapi3`, already in the build, emits one OpenAPI document per revision.
-3. Effect's OpenAPI generator turns each into Effect schemas, generated into the protocol package.
+3. Effect's OpenAPI generator (`@effect/openapi-generator`) turns each into Effect schemas,
+   generated into the protocol package. Our generate step uses its library rather than its command,
+   so that every schema in the contract is generated, the socket frames and MCP inputs included, not
+   only those an HTTP route reaches. It also hands the generator objects marked
+   `additionalProperties: false` in place of the sealed `unevaluatedProperties: false`, which Effect
+   can't import.
 4. The upgrade from one revision to the next is written by hand beside the spec, one function per
-   message that changed, with `Schema.decodeTo`. Effect's `TaggedUnion` and `catchDecoding` give the
-   unions and their `unknown` members.
+   message that changed, with `Schema.decodeTo`.
+5. Each union a release can grow ends in an `unknown` member: a `Schema.decodeTo` from the fields
+   every member has to `{ kind: "unknown", was }`, so a reader keeps what it can show and the kind it
+   was told.
 
 The server's HTTP layer keeps the Zod validators `typespec-hono` generates.
 
@@ -164,21 +173,34 @@ Everything is in the open-source packages, and nothing in it is specific to any 
 A host that builds on the packages updates them and binds version metadata. Its own pages
 ship with its Worker, so the same reload signal covers them.
 
-## To check first
+## What the checks found
 
-- **Effect's OpenAPI generator:** its exact package, how mature it is, and whether it reads the
-  OpenAPI 3.1 TypeSpec emits, discriminated unions included.
-- **`typespec-hono` with `@versioned`:** whether it emits the latest revision cleanly.
-- **Version metadata in a Durable Object:** whether a space sees the same binding and creation time
-  as its Worker, and how both the `cf` config and Wrangler declare the binding.
-- **A space restarting itself:** what the interrupted call sees, whether Cloudflare marks it
-  retryable, and how it interacts with waiting laps and background tasks.
-- **Timing:** the `unknown` members change the SDK's types. Shipping this in 0.4.0, the first npm
-  release, means no SDK user ever meets that as a breaking change.
+Checked on 2026-10-31, against the contract as it stands:
+
+- **Effect's OpenAPI generator works on our contract.** `@effect/openapi-generator` 4.1.1 generated
+  all 53 of the contract's schemas once its input was adjusted as above. The output typechecks
+  against `effect` 4.0.6 under our compiler settings. Decoding it: a known ask decodes; a field the
+  reader doesn't know is ignored and dropped; an unknown kind fails on its own, and decodes to the
+  `unknown` member once the union ends in one; something that isn't an ask still fails.
+  `Schema.catchDecoding` did not recover a failed union, so the `unknown` members don't rely on it.
+- **`typespec-hono` copes with `@versioned`.** With two revisions declared and a field added in the
+  second, the compile succeeded: `typespec-hono` emitted the latest revision, `@typespec/openapi3`
+  emitted `openapi.1.json` without the field and `openapi.2.json` with it, and
+  `typespec-openapi-document` imported both and serves the latest.
+- **Both deploy tools declare version metadata:** `bindings.versionMetadata()` in the `cf` config,
+  `version_metadata` in Wrangler. Local development doesn't give real values, so whether a space
+  sees the same creation time as its Worker is confirmed on the first deploy that carries the build,
+  with a probe. If it doesn't, the build marker becomes a constant the bundler writes at build time.
+- **`ctx.abort()`** resets the object at once, and application code can't catch it. Cloudflare
+  doesn't say what an interrupted caller sees, which is why the space answers `Outdated` first.
+
+Still to settle while building: how the self-restart meets a waiting lap or a background task, and
+the timing. The `unknown` members change the SDK's types, so shipping this in 0.4.0, the first npm
+release, means no SDK user ever meets that as a breaking change.
 
 ## Order of work
 
-1. The checks above.
+1. The checks above. Done.
 2. The contract: today's becomes revision 1, its messages are frozen as examples, and the test that
    it can't change without a new revision.
 3. Generated Effect schemas, SDK decoding with `unknown` members, and the inbox drawing them.
@@ -187,4 +209,5 @@ ship with its Worker, so the same reload signal covers them.
 6. Release 0.4.0 to npm.
 
 Each step is tested by making the failure happen first. One test replays the incident itself: a call
-from a newer build reaches a space on an older one, which must restart rather than store anything.
+from a newer build reaches a space on an older one, which must refuse it as `Outdated` and restart
+rather than store anything.
