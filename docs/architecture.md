@@ -18,10 +18,22 @@
 
 ## Asks
 
-An **ask** is what an agent needs from a person: a question, or work to review. It is a short
-thread. The agent's opening turn is the prompt; after that, entries alternate between the person's
-replies and the agent's answers. An ask is `awaiting_human`, `awaiting_agent` (the person asked
-something back) or `closed`. Every reply except a follow-up question closes it.
+An **ask** is what an agent needs from a person: a question, work to review, or a briefing. It is a
+short thread. The agent's opening turn is the prompt; after that, the person's replies and the
+agent's answers take turns, a turn being one entry or, for an agent answering a briefing, one entry
+per point. An ask is `awaiting_human`, `awaiting_agent` (the agent owes an answer: to a question
+asked back, or on a briefing's points) or `closed`. Every reply to a question or review except a
+follow-up question closes it.
+
+A **briefing** is points the agent explains, numbered `1`, `2`, `3` straight through its sections,
+for the person to reply on one at a time. Their reply (`responded`) names points, each with words,
+resolved, or both; the agent then owes an answer on every point written on and left unresolved, and
+gives one thread entry per point, which may break the point into sub-points (`3.1`, then `3.1.2`,
+three levels at most). Resolving a point resolves everything beneath it; writing on a point beneath
+a resolved one reopens it. The briefing closes once every point is resolved, and the person may
+dismiss it even while it is the agent's move. Where each point stands is never stored: one pure
+fold, `foldBriefing` in the protocol package, reads it from the prompt and thread, and the server
+validates with the same fold every inbox renders with.
 
 ## Spaces and the gate
 
@@ -67,7 +79,7 @@ MCP tools. One `pnpm generate` produces, from it:
 - the OpenAPI document, served at `/api/v1/openapi.json`.
 
 Generated files are committed, and CI fails if they drift from the definition. The MCP tools are
-registered by hand, because three of them block, but take their schemas from the same compile.
+registered by hand, because five of them block, but take their schemas from the same compile.
 
 ## The server
 
@@ -85,8 +97,8 @@ People take minutes to reply, and an agent should not stop for them. Loopback ha
 one of two ways, chosen per request by what the client says it supports.
 
 **Background tasks.** A client that declares the MCP Tasks extension
-(`io.modelcontextprotocol/tasks`) gets a task back from `ask_question`, `request_review` and
-`answer_follow_up` at once, and carries on. A task follows one of the agent's turns on an ask: its
+(`io.modelcontextprotocol/tasks`) gets a task back from `ask_question`, `request_review`,
+`send_briefing`, `answer_follow_up` and `answer_briefing` at once, and carries on. A task follows one of the agent's turns on an ask: its
 id is `<ask id>:<turn>`, where the turn is the thread entry the agent's move ended with (0 for
 opening the ask). The client polls `tasks/get`, every two seconds at first and less often as the
 wait grows, since each poll is a request to the space; the task completes with the first reply the

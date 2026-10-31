@@ -23,8 +23,12 @@ inbox itself served from the same deployment. You run it on your own Cloudflare 
 
 - **Questions and reviews.** Agents ask questions, with or without choices, and show you work for a
   verdict: copy, a plan, code, a diff, a screenshot.
-- **Five ways to reply.** Answer (pick choices, write your own words, or both), approve with an
-  optional note, request changes, ask a question back, or dismiss.
+- **Briefings, point by point.** When an agent explains something that breaks into several points,
+  you reply on each point on its own, drill into it through sub-points the agent adds, and resolve
+  it. Each point is one line until opened, so what still needs you is plain to see.
+- **Ways to reply that fit the ask.** Answer (pick choices, write your own words, or both), approve
+  with an optional note, request changes, ask a question back, reply on a briefing's points, or
+  dismiss.
 - **Agents don't stop for you.** On clients that support MCP background tasks, an ask returns at
   once and the reply arrives when you give it. Other clients wait, kept alive by progress updates.
 - **One inbox for every project.** Each ask names the project it comes from, so agents in many
@@ -45,6 +49,8 @@ inbox itself served from the same deployment. You run it on your own Cloudflare 
 | `ask_question`        | Asks you something, optionally with choices.                                            |
 | `request_review`      | Shows you work for your verdict: approve, request changes, ask back or dismiss.         |
 | `answer_follow_up`    | Answers a question you asked back, keeping the same ask open.                           |
+| `send_briefing`       | Explains something as points you reply on one at a time, and resolve.                   |
+| `answer_briefing`     | Answers your replies on a briefing, point by point, breaking points into sub-points.    |
 | `create_image_upload` | Hands out a one-time URL for an image to show in a review.                              |
 | `open_inbox`          | Gives the address of your inbox, or of one ask in it, so the agent can open it for you. |
 

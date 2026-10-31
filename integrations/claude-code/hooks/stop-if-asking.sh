@@ -18,6 +18,6 @@ asks='\?[*_)"'"'"'[:space:]]*$|let me know|tell me (which|what|if|whether|how)|w
 printf '%s' "$ending" | grep -Eiq "$asks" || exit 0
 
 project=$(project_of "$input")
-reason="You ended your turn asking the person something in this conversation, but they answer from their Loopback inbox, not this terminal. Put that question to them with mcp__plugin_loopback_loopback__ask_question, with any choices you offered as options and project: \"$project\" (or show the work with mcp__plugin_loopback_loopback__request_review if you are asking them to look at something). If the Loopback tools are not available in this session, you may stop."
+reason="You ended your turn asking the person something in this conversation, but they answer from their Loopback inbox, not this terminal. Put that question to them with mcp__plugin_loopback_loopback__ask_question, with any choices you offered as options and project: \"$project\" (or show the work with mcp__plugin_loopback_loopback__request_review if you are asking them to look at something, or send the points with mcp__plugin_loopback_loopback__send_briefing if you were explaining several). If the Loopback tools are not available in this session, you may stop."
 
 jq -n --arg reason "$reason" '{ decision: "block", reason: $reason }'

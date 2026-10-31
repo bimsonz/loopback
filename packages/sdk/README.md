@@ -31,13 +31,19 @@ try {
 
 Replies are one of:
 
-| `outcome`           | Fields                          | For                |
-| ------------------- | ------------------------------- | ------------------ |
-| `answered`          | `selected: string[]`, `text?`   | questions          |
-| `approved`          | `note?`                         | reviews            |
-| `changes_requested` | `feedback`                      | reviews            |
-| `follow_up`         | `question` — keeps the ask open | questions, reviews |
-| `dismissed`         |                                 | questions, reviews |
+| `outcome`           | Fields                                  | For                           |
+| ------------------- | --------------------------------------- | ----------------------------- |
+| `answered`          | `selected: string[]`, `text?`           | questions                     |
+| `approved`          | `note?`                                 | reviews                       |
+| `changes_requested` | `feedback`                              | reviews                       |
+| `follow_up`         | `question` — keeps the ask open         | questions, reviews            |
+| `responded`         | `points: { point, text?, resolved? }[]` | briefings                     |
+| `dismissed`         |                                         | questions, reviews, briefings |
+
+A briefing's points, and where each stands, are folded from its prompt and thread by
+`foldBriefing(ask.prompt, ask.thread)`: the tree an inbox renders, the points that need the person,
+and those the agent owes an answer on. `respondedProblem` says why a `responded` reply would be
+refused before it is sent.
 
 `loopback.file(uploadId)` fetches an image a review shows, as a `Blob`.
 
