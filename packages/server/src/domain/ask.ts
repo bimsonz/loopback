@@ -1,14 +1,20 @@
-import type {
-	Actor,
-	Ask,
-	AskStatus,
-	Block,
-	Entry,
-	QuestionInput,
-	QuestionPrompt,
-	Reply,
-	ReviewInput,
-	ReviewPrompt,
+import {
+	type Actor,
+	type Ask,
+	type AskStatus,
+	type Block,
+	type BriefingInput,
+	type BriefingPrompt,
+	type Entry,
+	foldBriefing,
+	MAX_TOP_POINTS,
+	numberBriefing,
+	type QuestionInput,
+	type QuestionPrompt,
+	type Reply,
+	respondedProblem,
+	type ReviewInput,
+	type ReviewPrompt,
 } from "@loopbackhq/protocol";
 import { Effect } from "effect";
 import { AskClosed, ContentInvalid, NotYourTurn, ReplyInvalid } from "./errors.ts";
@@ -18,6 +24,7 @@ export type AskRecord = AskHead &
 	(
 		| { readonly kind: "question"; readonly prompt: QuestionPrompt }
 		| { readonly kind: "review"; readonly prompt: ReviewPrompt; readonly revises: string | null }
+		| { readonly kind: "briefing"; readonly prompt: BriefingPrompt }
 	);
 
 interface AskHead {
@@ -53,14 +60,20 @@ export const REATTACH_WINDOW_MS = 60 * 60 * 1000;
  */
 export const MAX_ASK_BYTES = 256 * 1024;
 
-/** Refuses what an agent sends when it is too large to keep and show. */
-export const checkSize = (content: unknown): Effect.Effect<void, ContentInvalid> => {
+/**
+ * Refuses what an agent sends when it is too large to keep and show, with advice that fits what it
+ * was sending: an ask can be split into several, an answer can only show less.
+ */
+export const checkSize = (
+	content: unknown,
+	advice = "Show the part that matters.",
+): Effect.Effect<void, ContentInvalid> => {
 	const bytes = new TextEncoder().encode(JSON.stringify(content)).byteLength;
 	return bytes <= MAX_ASK_BYTES
 		? Effect.void
 		: Effect.fail(
 				new ContentInvalid({
-					reason: `This is too large to show: ${Math.ceil(bytes / 1024)} KiB, where the most is ${MAX_ASK_BYTES / 1024} KiB. Show the part that matters, or split it into several reviews.`,
+					reason: `This is too large to show: ${Math.ceil(bytes / 1024)} KiB, where the most is ${MAX_ASK_BYTES / 1024} KiB. ${advice}`,
 				}),
 			);
 };
@@ -77,6 +90,20 @@ export const reviewPrompt = (input: ReviewInput): ReviewPrompt => ({
 	content: input.content,
 	...(input.summary === undefined ? {} : { summary: input.summary }),
 });
+
+/** A briefing as it opens, its points numbered; refused when it holds more than the inbox shows. */
+export const briefingPrompt = (
+	input: BriefingInput,
+): Effect.Effect<BriefingPrompt, ContentInvalid> => {
+	const count = input.sections.reduce((sum, section) => sum + section.points.length, 0);
+	return count <= MAX_TOP_POINTS
+		? Effect.succeed(numberBriefing(input))
+		: Effect.fail(
+				new ContentInvalid({
+					reason: `This briefing has ${count} points, where the most is ${MAX_TOP_POINTS}. Split it into several briefings, or group points as sub-points once the person replies.`,
+				}),
+			);
+};
 
 /** The uploads a set of blocks shows. */
 export const imagesIn = (blocks: readonly Block[]): string[] =>
@@ -96,46 +123,77 @@ export const toAsk = (record: AskRecord, thread: readonly EntryRecord[], waiting
 		...(record.raisedBy === null ? {} : { raisedBy: record.raisedBy }),
 		...(record.closedAt === null ? {} : { closedAt: record.closedAt }),
 	};
-	return record.kind === "question"
-		? { kind: "question", prompt: record.prompt, ...common }
-		: {
+	switch (record.kind) {
+		case "question":
+			return { kind: "question", prompt: record.prompt, ...common };
+		case "review":
+			return {
 				kind: "review",
 				prompt: record.prompt,
 				...(record.revises === null ? {} : { revises: record.revises }),
 				...common,
 			};
+		case "briefing":
+			return { kind: "briefing", prompt: record.prompt, ...common };
+	}
 };
 
-/** Where an ask stands once a reply lands: open for the agent after a follow-up, closed otherwise. */
-export const statusAfter = (reply: Reply): AskStatus =>
-	reply.outcome === "follow_up" ? "awaiting_agent" : "closed";
+/**
+ * Where an ask stands once a reply lands: open for the agent after a follow-up, or after replies on a
+ * briefing that leave a point unresolved; closed otherwise.
+ */
+export const statusAfter = (
+	record: AskRecord,
+	thread: readonly Entry[],
+	reply: Reply,
+): AskStatus => {
+	if (reply.outcome === "follow_up") return "awaiting_agent";
+	if (reply.outcome !== "responded" || record.kind !== "briefing") return "closed";
+	const after = foldBriefing(record.prompt, [...thread, { author: "human", reply, at: "" }]);
+	return after.resolved ? "closed" : "awaiting_agent";
+};
 
 /**
  * Whether a person may make this reply now. The rules the contract cannot state as a schema:
- * whose turn it is, which outcomes fit which kind, and that an answer's choices are among those
- * offered.
+ * whose turn it is, which outcomes fit which kind, that an answer's choices are among those
+ * offered, and that replies on a briefing fit its points. A briefing may be dismissed even while
+ * the agent owes an answer, so one whose agent has gone never stays open for good.
  */
 export const checkReply = (
 	record: AskRecord,
+	thread: readonly Entry[],
 	reply: Reply,
 ): Effect.Effect<void, AskClosed | NotYourTurn | ReplyInvalid> => {
 	if (record.status === "closed") return Effect.fail(new AskClosed({ askId: record.id }));
-	if (record.status === "awaiting_agent") {
+	if (
+		record.status === "awaiting_agent" &&
+		!(record.kind === "briefing" && reply.outcome === "dismissed")
+	) {
 		return Effect.fail(new NotYourTurn({ askId: record.id, turn: "agent" }));
 	}
 	const invalid = (reason: string) => Effect.fail(new ReplyInvalid({ reason }));
 	switch (reply.outcome) {
-		case "follow_up":
 		case "dismissed":
 			return Effect.void;
+		case "follow_up":
+			return record.kind === "briefing"
+				? invalid("A briefing takes replies on its points, not a question back: write on a point.")
+				: Effect.void;
+		case "responded": {
+			if (record.kind !== "briefing") {
+				return invalid(`"responded" is a reply to a briefing, and this ask is a ${record.kind}.`);
+			}
+			const problem = respondedProblem(record.prompt, thread, reply);
+			return problem === null ? Effect.void : invalid(problem);
+		}
 		case "approved":
 		case "changes_requested":
 			return record.kind === "review"
 				? Effect.void
-				: invalid(`"${reply.outcome}" is a reply to a review, and this ask is a question.`);
+				: invalid(`"${reply.outcome}" is a reply to a review, and this ask is a ${record.kind}.`);
 		case "answered": {
 			if (record.kind !== "question") {
-				return invalid(`"answered" is a reply to a question, and this ask is a review.`);
+				return invalid(`"answered" is a reply to a question, and this ask is a ${record.kind}.`);
 			}
 			const offered = new Set(record.prompt.options.map((option) => option.label));
 			const unknown = reply.selected.filter((label) => !offered.has(label));

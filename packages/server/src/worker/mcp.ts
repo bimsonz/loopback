@@ -1,4 +1,11 @@
-import type { ToolReply } from "@loopbackhq/protocol";
+import {
+	type Ask,
+	type BriefingAsk,
+	findPoint,
+	foldBriefing,
+	type Responded,
+	type ToolReply,
+} from "@loopbackhq/protocol";
 import {
 	type AuthInfo,
 	type CallToolResult,
@@ -12,6 +19,8 @@ import {
 import { Effect } from "effect";
 import { z } from "zod";
 import {
+	briefingAnswerInputSchema,
+	briefingInputSchema,
 	followUpInputSchema,
 	inboxLinkSchema,
 	inboxRequestSchema,
@@ -21,7 +30,7 @@ import {
 	uploadTicketSchema,
 } from "../generated/schemas.gen.ts";
 import type { AskNotFound } from "../domain/errors.ts";
-import type { TaskState } from "../space/operations.ts";
+import type { Delivery, TaskState } from "../space/operations.ts";
 import type { SpaceClient } from "../space/rpc.ts";
 import type { Access } from "./gate.ts";
 import { incident, run, Unhandled, type WorkerRuntime } from "./run.ts";
@@ -48,12 +57,13 @@ const INSTRUCTIONS = `Loopback puts what you need from the person you are workin
 Use it whenever you need a decision, a preference, information only they have, or their sign-off. Use it instead of guessing, instead of asking in your reply, and instead of your client's built-in question prompt: the person works across many projects at once and answers everything from this one inbox.
 - ask_question for anything you would otherwise ask in chat. Offer choices when there are clear ones.
 - request_review when they say "show me", "let me see" or "run it by me", or before you finalise work they should approve: copy, a plan, code, a diff, a screenshot. Put the work itself in the content.
+- send_briefing when they ask you to explain or walk them through something that breaks into several points: findings, options, steps, a list of changes. They reply on each point on its own, instead of on a list in your reply.
 - create_image_upload first when the review includes an image.
 - open_inbox when the person asks where their inbox or dashboard is, or to send them to an ask.
 
 People can take minutes to reply. Where your client supports background tasks, each of these returns at once: carry on with other work, raise more asks if you need to, and the person's reply reaches you when they give it. Otherwise the call waits for the reply.
 
-A reply whose outcome is follow_up is a question back to you: answer it with answer_follow_up, which brings their decision the same way. After changes_requested, revise and call request_review again with revises set to the earlier review's id.
+A reply whose outcome is follow_up is a question back to you: answer it with answer_follow_up, which brings their decision the same way. After changes_requested, revise and call request_review again with revises set to the earlier review's id. Replies on a briefing come back keyed to its points: answer every point they wrote on with answer_briefing, which brings their next replies the same way, until every point is resolved.
 
 Every ask names its project: the name of the folder at the root of the repository you are working in (the last part of \`git rev-parse --show-toplevel\`), or of the working directory outside one. Use the same name every time.`;
 
@@ -122,8 +132,51 @@ const text = (message: string): CallToolResult => ({ content: [{ type: "text", t
 
 const refused = (message: string): CallToolResult => ({ ...text(message), isError: true });
 
-/** What a reply means for the agent, said plainly. */
-const describe = ({ askId, reply }: ToolReply): string => {
+/** "2", "2 and 3", "1, 2 and 3". */
+const listed = (items: readonly string[]): string =>
+	items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+
+/** A briefing, and where in its thread a reply landed. */
+interface Landed {
+	readonly briefing: BriefingAsk;
+	readonly seq: number;
+}
+
+/**
+ * Replies on a briefing, each point named with its title, and what the agent owes now. The briefing
+ * is read as it stood when this reply landed, so a task polled again later says the same.
+ */
+const describeResponded = (askId: string, reply: Responded, landed?: Landed): string => {
+	const tree =
+		landed === undefined
+			? undefined
+			: foldBriefing(landed.briefing.prompt, landed.briefing.thread.slice(0, landed.seq));
+	const named = (id: string) => {
+		const title = tree === undefined ? undefined : findPoint(tree, id)?.title;
+		return title === undefined ? id : `${id} (${title})`;
+	};
+	const lines = reply.points.map((item) => {
+		const wrote = item.text?.trim() ?? "";
+		// As the fold reads it: words on or beneath a point resolved in the same reply are closing
+		// notes, and its record of this turn on the point says so.
+		const turn = tree === undefined ? undefined : findPoint(tree, item.point)?.turns.at(-1);
+		const settled = turn?.author === "human" ? turn.resolved : item.resolved === true;
+		const said = settled
+			? wrote === ""
+				? "resolved."
+				: `resolved, saying "${wrote}"`
+			: `they wrote "${wrote}"`;
+		return `- Point ${named(item.point)}: ${said}`;
+	});
+	const next =
+		tree === undefined || tree.resolved
+			? "The briefing is closed: every point is resolved. Act on what they said, or ask a new question if something is still unclear."
+			: `Answer ${tree.owed.length === 1 ? "point" : "points"} ${listed(tree.owed.map(named))} with answer_briefing (askId: "${askId}"): each is owed an answer. You may answer other open points too, and break any point into sub-points.`;
+	return ["The person replied on the briefing:", ...lines, "", next].join("\n");
+};
+
+/** What a reply means for the agent, said plainly. A briefing's replies name its points' titles. */
+const describe = ({ askId, reply }: ToolReply, landed?: Landed): string => {
 	switch (reply.outcome) {
 		case "answered": {
 			const chose =
@@ -142,16 +195,41 @@ const describe = ({ askId, reply }: ToolReply): string => {
 			return `The person asked a question before deciding: ${reply.question}\n\nAnswer it with answer_follow_up (askId: "${askId}"). This ask stays open, and that call returns their decision.`;
 		case "dismissed":
 			return "The person dismissed this without answering. Carry on with your best judgement, or ask differently.";
+		case "responded":
+			return describeResponded(askId, reply, landed);
 	}
 };
 
-const answered = (reply: ToolReply): CallToolResult => ({
-	...text(describe(reply)),
-	structuredContent: reply,
-});
+/** A reply as the agent receives it: in words, and as the contract's `ToolReply`. */
+const answered = (delivery: Delivery, briefing?: BriefingAsk): CallToolResult => {
+	const reply: ToolReply = { askId: delivery.askId, reply: delivery.reply };
+	return {
+		...text(describe(reply, briefing === undefined ? undefined : { briefing, seq: delivery.seq })),
+		structuredContent: reply,
+	};
+};
+
+/** The briefing a reply was given on, read only when the reply is one, to name its points. */
+const briefingFor = (
+	space: SpaceClient,
+	reply: ToolReply | null,
+): Effect.Effect<BriefingAsk | undefined, AskNotFound> =>
+	reply?.reply.outcome === "responded"
+		? Effect.map(space.get(reply.askId), (ask: Ask) => (ask.kind === "briefing" ? ask : undefined))
+		: Effect.succeed(undefined);
+
+/**
+ * The turn an opened ask is followed from: its opening for a new ask, and the agent's latest move
+ * for one a retried call rejoined, so its task completes with the reply still to come, not the first.
+ */
+const latestTurn = (ask: Ask): readonly [turn: number, at: string] => {
+	const last = ask.thread.findLastIndex((entry) => entry.author === "agent");
+	const entry = ask.thread[last];
+	return entry === undefined ? [0, ask.createdAt] : [last + 1, entry.at];
+};
 
 /** A task in the shape `tasks/get` and a task-creating `tools/call` share. */
-const taskView = (taskId: string, state: TaskState) => ({
+const taskView = (taskId: string, state: TaskState, briefing?: BriefingAsk) => ({
 	taskId,
 	status: state.status,
 	...(state.status === "working"
@@ -161,7 +239,7 @@ const taskView = (taskId: string, state: TaskState) => ({
 	lastUpdatedAt: state.lastUpdatedAt,
 	ttlMs: null,
 	pollIntervalMs: pollEvery(state.createdAt, Date.now()),
-	...(state.reply === null ? {} : { result: answered(state.reply) }),
+	...(state.reply === null ? {} : { result: answered(state.reply, briefing) }),
 });
 
 /**
@@ -204,8 +282,7 @@ const replyTo = (ctx: ServerContext, space: SpaceClient, askId: string) =>
 			const delivery = yield* space.awaitReply(askId, LAP_MS);
 			if (delivery !== null) {
 				yield* space.markDelivered(askId, delivery.seq);
-				const reply: ToolReply = { askId: delivery.askId, reply: delivery.reply };
-				return reply;
+				return answered(delivery, yield* briefingFor(space, delivery));
 			}
 		}
 	}).pipe(Effect.catchTag("AskNotFound", Effect.die));
@@ -241,9 +318,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 		turn: number,
 		at: string,
 	): Effect.Effect<CallToolResult> =>
-		supportsTasks(ctx)
-			? Effect.succeed(started(askId, turn, at))
-			: Effect.map(replyTo(ctx, space, askId), answered);
+		supportsTasks(ctx) ? Effect.succeed(started(askId, turn, at)) : replyTo(ctx, space, askId);
 
 	/** Runs a `tasks/*` request against the task's ask; an ask or turn the space does not know is no task. */
 	const task = async (
@@ -257,18 +332,21 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 	) => {
 		requireTasks(ctx);
 		const { askId, turn } = taskOf(taskId);
-		const state = await run(
+		const found = await run(
 			runtime,
 			ctx.mcpReq.signal,
 			requestId,
-			Spaces.use((spaces) => program(spaces.of(access), askId, turn)).pipe(
-				Effect.catchTag("AskNotFound", () => Effect.succeed(null)),
-			),
+			Spaces.use((spaces) => {
+				const space = spaces.of(access);
+				return Effect.flatMap(program(space, askId, turn), (state) =>
+					Effect.map(briefingFor(space, state.reply), (briefing) => ({ state, briefing })),
+				);
+			}).pipe(Effect.catchTag("AskNotFound", () => Effect.succeed(null))),
 		).catch((error: unknown) => {
 			throw new ProtocolError(ProtocolErrorCode.InternalError, died(error));
 		});
-		if (state === null) throw unknownTask(taskId);
-		return taskView(taskId, state);
+		if (found === null) throw unknownTask(taskId);
+		return taskView(taskId, found.state, found.briefing);
 	};
 
 	mcp.server.registerCapabilities({ extensions: { [TASKS_EXTENSION]: {} } });
@@ -316,7 +394,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
-					return yield* settle(ctx, space, ask.id, 0, ask.createdAt);
+					return yield* settle(ctx, space, ask.id, ...latestTurn(ask));
 				}).pipe(
 					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
 						Effect.succeed(refused(error.reason)),
@@ -344,7 +422,7 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 						actor: access.actor,
 						...(client === undefined ? {} : { client }),
 					});
-					return yield* settle(ctx, space, ask.id, 0, ask.createdAt);
+					return yield* settle(ctx, space, ask.id, ...latestTurn(ask));
 				}).pipe(
 					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
 						Effect.succeed(refused(error.reason)),
@@ -377,6 +455,71 @@ const server = ({ runtime, access, origin, requestId }: McpCaller) => {
 							Effect.succeed(
 								refused(
 									"The person has not asked anything back on that ask, so there is nothing to answer.",
+								),
+							),
+						ContentInvalid: (error) => Effect.succeed(refused(error.reason)),
+					}),
+				),
+			),
+	);
+
+	mcp.registerTool(
+		"send_briefing",
+		{
+			title: "Brief the person, point by point",
+			description:
+				"Explain something that breaks into several points (findings, options, steps, a list of changes) so the person can reply on each point on its own: ask about one, push back on another, resolve the rest. Use it when they ask you to explain or walk them through something, instead of writing the list in your reply. Give each point a one-line title, which they see folded, and its detail beneath. Points are numbered for you, 1, 2, 3 and on, straight through every section, and their replies come back keyed to those numbers: answer them with answer_briefing. Returns at once as a background task where your client supports it; otherwise waits for their replies.",
+			inputSchema: briefingInputSchema,
+			annotations: waits,
+		},
+		(input, ctx) =>
+			serve(ctx, (space) =>
+				Effect.gen(function* () {
+					const client = clientOf(ctx);
+					const ask = yield* space.open({
+						kind: "briefing",
+						input,
+						actor: access.actor,
+						...(client === undefined ? {} : { client }),
+					});
+					return yield* settle(ctx, space, ask.id, ...latestTurn(ask));
+				}).pipe(
+					Effect.catchTag(["ContentInvalid", "Declined"], (error) =>
+						Effect.succeed(refused(error.reason)),
+					),
+				),
+			),
+	);
+
+	mcp.registerTool(
+		"answer_briefing",
+		{
+			title: "Answer the person, point by point",
+			description:
+				"Answer the person's replies on a briefing: one answer for every point they wrote on without resolving it, and for any other open point you have more to say on. When a point needs drilling into, break it into sub-points, numbered beneath it (3.1, 3.2), which they can reply on in turn. Then get their next replies the same way the briefing brought these. The briefing closes once they resolve every point.",
+			inputSchema: briefingAnswerInputSchema,
+			annotations: waits,
+		},
+		(input, ctx) =>
+			serve(ctx, (space) =>
+				Effect.gen(function* () {
+					// A retried move rejoins the turn it first took, which may no longer be the last.
+					const { ask, turn } = yield* space.answerBriefing(input);
+					const answer = ask.thread[turn - 1];
+					return yield* settle(ctx, space, ask.id, turn, answer?.at ?? ask.updatedAt);
+				}).pipe(
+					Effect.catchTags({
+						AskNotFound: () => Effect.succeed(refused(`No briefing "${input.askId}".`)),
+						AskClosed: () =>
+							Effect.succeed(
+								refused(
+									"The person closed that briefing. Act on what they said, or ask a new question if something is still unclear.",
+								),
+							),
+						NotYourTurn: () =>
+							Effect.succeed(
+								refused(
+									"The person has not replied on that briefing since your last answers, so there is nothing to answer yet.",
 								),
 							),
 						ContentInvalid: (error) => Effect.succeed(refused(error.reason)),

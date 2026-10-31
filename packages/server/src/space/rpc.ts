@@ -79,6 +79,7 @@ export type SpaceClient = {
 const idempotent: ReadonlySet<OperationName> = new Set<OperationName>([
 	"open",
 	"answerFollowUp",
+	"answerBriefing",
 	"awaitReply",
 	"markDelivered",
 	"followTask",

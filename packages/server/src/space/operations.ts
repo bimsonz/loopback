@@ -1,20 +1,29 @@
-import type {
-	Actor,
-	Ask,
-	AskPage,
-	Block,
-	FollowUpInput,
-	ImageType,
-	QuestionInput,
-	Reply,
-	ReviewInput,
-	Snapshot,
-	ToolReply,
-	UploadReceipt,
+import {
+	type Actor,
+	type AgentEntry,
+	type Ask,
+	type AskPage,
+	type Block,
+	type BriefingAnswerInput,
+	type BriefingInput,
+	type BriefingPoint,
+	answerEntries,
+	answersProblem,
+	type FollowUpInput,
+	foldBriefing,
+	type ImageType,
+	type QuestionInput,
+	type Reply,
+	type ReviewInput,
+	type Snapshot,
+	type ToolReply,
+	type UploadReceipt,
 } from "@loopbackhq/protocol";
 import { Clock, Duration, Effect, Option, PubSub } from "effect";
 import {
 	type AskRecord,
+	briefingPrompt,
+	type EntryRecord,
 	checkReply,
 	checkSize,
 	fingerprint,
@@ -51,10 +60,11 @@ export const TICKET_TTL_MS = 60 * 1000;
 /** The largest image an upload ticket accepts. */
 export const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 
-/** A question or review an agent is opening, with the MCP client that sent it when known. */
+/** A question, review or briefing an agent is opening, with the MCP client that sent it when known. */
 export type OpenRequest = (
 	| { readonly kind: "question"; readonly input: QuestionInput }
 	| { readonly kind: "review"; readonly input: ReviewInput }
+	| { readonly kind: "briefing"; readonly input: BriefingInput }
 ) & {
 	readonly client?: string;
 	/** Whose agent is asking. A retried call is only recognised as the same person's. */
@@ -164,6 +174,10 @@ const checkImages = Effect.fnUntraced(function* (blocks: readonly Block[]) {
 	}
 });
 
+/** Everything a set of briefing points shows. */
+const blocksOf = (points: readonly BriefingPoint[]): Block[] =>
+	points.flatMap((point) => point.content ?? []);
+
 /**
  * Opens an ask, or rejoins the one a retried call opened. A retry is the same question or review,
  * from the same client and project, while the ask is still open or holds a reply that never
@@ -171,7 +185,10 @@ const checkImages = Effect.fnUntraced(function* (blocks: readonly Block[]) {
  */
 export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
 	const store = yield* AskStore;
-	yield* checkSize(request.input);
+	yield* checkSize(
+		request.input,
+		`Show the part that matters, or split it into several ${request.kind}s.`,
+	);
 	const at = yield* now;
 	const key = yield* fingerprint({
 		kind: request.kind,
@@ -208,15 +225,26 @@ export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
 		closedAt: null,
 		lastWaitedAt: at,
 	} as const;
-	const record: AskRecord =
-		request.kind === "question"
-			? { ...head, kind: "question", prompt: questionPrompt(request.input) }
-			: {
-					...head,
-					kind: "review",
-					prompt: reviewPrompt(request.input),
-					revises: request.input.revises ?? null,
-				};
+	let record: AskRecord;
+	switch (request.kind) {
+		case "question":
+			record = { ...head, kind: "question", prompt: questionPrompt(request.input) };
+			break;
+		case "review":
+			record = {
+				...head,
+				kind: "review",
+				prompt: reviewPrompt(request.input),
+				revises: request.input.revises ?? null,
+			};
+			break;
+		case "briefing": {
+			const prompt = yield* briefingPrompt(request.input);
+			yield* checkImages(blocksOf(request.input.sections.flatMap((section) => section.points)));
+			record = { ...head, kind: "briefing", prompt };
+			break;
+		}
+	}
 	yield* store.insert(record);
 	const ask = yield* view(record);
 	yield* announce("ask.opened", ask);
@@ -231,6 +259,11 @@ export const answerFollowUp = Effect.fn("Space.answerFollowUp")(function* (input
 	const store = yield* AskStore;
 	const presence = yield* Presence;
 	const record = yield* findAsk(input.askId);
+	if (record.kind === "briefing") {
+		return yield* new ContentInvalid({
+			reason: "This is a briefing: answer it with answer_briefing, on each point.",
+		});
+	}
 	if (record.status === "closed") return yield* new AskClosed({ askId: record.id });
 	if (record.status === "awaiting_human") {
 		const thread = yield* store.thread(record.id);
@@ -262,6 +295,97 @@ export const answerFollowUp = Effect.fn("Space.answerFollowUp")(function* (input
 	const ask = yield* view({ ...record, status: "awaiting_human", updatedAt: at });
 	yield* announce("ask.updated", ask);
 	return ask;
+});
+
+/** Whether a recorded agent entry is this answer, as a retried move would send it again. */
+const sameAnswer = (entry: AgentEntry, answer: BriefingAnswerInput["answers"][number]) =>
+	entry.point === answer.point &&
+	entry.answer === answer.answer &&
+	JSON.stringify(entry.content ?? []) === JSON.stringify(answer.content ?? []) &&
+	JSON.stringify((entry.points ?? []).map(({ id: _, ...point }) => point)) ===
+		JSON.stringify(answer.points ?? []);
+
+/** The agent's move on a briefing as recorded, and its turn: the thread entry the move ended with. */
+export interface BriefingMove {
+	readonly ask: Ask;
+	readonly turn: number;
+}
+
+/**
+ * The turn a retried move rejoins, if it is one: the agent's latest move is this same move, and
+ * nothing the person sent since has reached the agent. Once any reply after the move has reached it,
+ * the agent has seen past the move, so the same words again are a new move, never a retry.
+ */
+const rejoins = (
+	thread: readonly EntryRecord[],
+	answers: BriefingAnswerInput["answers"],
+): number | undefined => {
+	const last = thread.findLastIndex((row) => row.entry.author === "agent");
+	if (last + 1 < answers.length) return undefined;
+	const move = thread.slice(last + 1 - answers.length, last + 1);
+	const same = move.every((row, n) => {
+		const answer = answers[n];
+		return row.entry.author === "agent" && answer !== undefined && sameAnswer(row.entry, answer);
+	});
+	if (!same) return undefined;
+	const since = thread.slice(last + 1);
+	return since.every((row) => row.deliveredAt === null) ? thread[last]?.seq : undefined;
+};
+
+/**
+ * Records the agent's answers on a briefing, one thread entry per point, numbering any sub-points,
+ * and hands the move back to the person. A move sent again before its reply reached the agent is a
+ * retry: it rejoins the move it repeats, and changes nothing.
+ */
+export const answerBriefing = Effect.fn("Space.answerBriefing")(function* (
+	input: BriefingAnswerInput,
+) {
+	const store = yield* AskStore;
+	const at = yield* now;
+	const { record, turn, made } = yield* store.transaction(
+		Effect.gen(function* () {
+			const found = yield* findAsk(input.askId);
+			if (found.kind !== "briefing") {
+				return yield* new ContentInvalid({
+					reason: `This is a ${found.kind}, not a briefing: answer_briefing answers only briefings.`,
+				});
+			}
+			const thread = yield* store.thread(found.id);
+			const rejoined = rejoins(thread, input.answers);
+			if (rejoined !== undefined) return { record: found, turn: rejoined, made: false };
+			if (found.status === "closed") return yield* new AskClosed({ askId: found.id });
+			if (found.status === "awaiting_human") {
+				return yield* new NotYourTurn({ askId: found.id, turn: "human" });
+			}
+			yield* checkSize(input.answers);
+			yield* checkImages(
+				input.answers.flatMap((answer) => [
+					...(answer.content ?? []),
+					...blocksOf(answer.points ?? []),
+				]),
+			);
+			const tree = foldBriefing(
+				found.prompt,
+				thread.map((row) => row.entry),
+			);
+			const problem = answersProblem(tree, input.answers);
+			if (problem !== null) return yield* new ContentInvalid({ reason: problem });
+			// Answering the person's replies shows the agent had them.
+			yield* store.markAllDelivered(found.id, at);
+			let last = 0;
+			for (const entry of answerEntries(tree, input.answers, at)) {
+				last = (yield* store.append(found.id, entry)).seq;
+			}
+			yield* store.setStatus(found.id, "awaiting_human", at);
+			yield* store.touchWaited(found.id, at);
+			const updated: AskRecord = { ...found, status: "awaiting_human", updatedAt: at };
+			return { record: updated, turn: last, made: true };
+		}),
+	);
+	const ask = yield* view(record);
+	if (made) yield* announce("ask.updated", ask);
+	const move: BriefingMove = { ask, turn };
+	return move;
 });
 
 /**
@@ -324,7 +448,7 @@ export interface TaskState {
 	readonly status: "working" | "completed" | "cancelled";
 	readonly createdAt: string;
 	readonly lastUpdatedAt: string;
-	readonly reply: ToolReply | null;
+	readonly reply: Delivery | null;
 }
 
 /** The task for turn `afterSeq` of an ask: when it started, and the reply that ends it, if given. */
@@ -337,7 +461,7 @@ const locateTask = Effect.fnUntraced(function* (askId: string, afterSeq: number)
 		| {
 				readonly seq: number;
 				readonly at: string;
-				readonly reply: ToolReply;
+				readonly reply: Delivery;
 				readonly delivered: boolean;
 		  }
 		| undefined;
@@ -347,7 +471,7 @@ const locateTask = Effect.fnUntraced(function* (askId: string, afterSeq: number)
 			answer = {
 				seq: row.seq,
 				at: row.entry.at,
-				reply: { askId, reply: row.entry.reply },
+				reply: { askId, reply: row.entry.reply, seq: row.seq },
 				delivered: row.deliveredAt !== null,
 			};
 		}
@@ -436,14 +560,15 @@ export const reply = Effect.fn("Space.reply")(function* (askId: string, answer: 
 	const store = yield* AskStore;
 	const replies = yield* Replies;
 	const at = yield* now;
-	const status = statusAfter(answer);
-	const record = yield* store.transaction(
+	const { record, status } = yield* store.transaction(
 		Effect.gen(function* () {
 			const found = yield* findAsk(askId);
-			yield* checkReply(found, answer);
+			const thread = (yield* store.thread(askId)).map((row) => row.entry);
+			yield* checkReply(found, thread, answer);
+			const next = statusAfter(found, thread, answer);
 			yield* store.append(askId, { author: "human", reply: answer, by, at });
-			yield* store.setStatus(askId, status, at);
-			return found;
+			yield* store.setStatus(askId, next, at);
+			return { record: found, status: next };
 		}),
 	);
 	yield* PubSub.publish(replies, undefined);
@@ -600,6 +725,7 @@ export const redeemTicket = Effect.fn("Space.redeemTicket")(function* (ticketSec
 export const operations = {
 	open,
 	answerFollowUp,
+	answerBriefing,
 	awaitReply,
 	markDelivered,
 	followTask,

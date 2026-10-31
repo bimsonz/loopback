@@ -1,4 +1,11 @@
-import type { QuestionInput, ReviewInput, ServerEvent } from "@loopbackhq/protocol";
+import type {
+	BriefingInput,
+	PointReply,
+	QuestionInput,
+	Reply,
+	ReviewInput,
+	ServerEvent,
+} from "@loopbackhq/protocol";
 import { describe, expect, it } from "@effect/vitest";
 import { runInDurableObject } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
@@ -546,5 +553,335 @@ describe("event socket", () => {
 			const response = yield* Effect.promise(() => stub.fetch("http://space/events"));
 			expect(response.status).toBe(426);
 		}),
+	);
+});
+
+describe("briefings", () => {
+	const migration: BriefingInput = {
+		title: "What the migration changes",
+		sections: [
+			{
+				title: "Storage",
+				points: [{ title: "Sessions move to D1" }, { title: "R2 keeps images" }],
+			},
+			{ points: [{ title: "Tokens are hashed at rest" }] },
+		],
+		project: "loopback",
+	};
+
+	const responded = (...points: PointReply[]): Reply => ({ outcome: "responded", points });
+
+	/** The error a failed call ended with, so a test can read its reason. */
+	const failureOf = <A, E>(exit: Exit.Exit<A, E>): E | undefined =>
+		Exit.isFailure(exit)
+			? exit.cause.reasons.flatMap((reason) => (reason._tag === "Fail" ? [reason.error] : []))[0]
+			: undefined;
+
+	/** A briefing the person has written on point 1 of, so the agent owes an answer there. */
+	const owing = Effect.fnUntraced(function* (space: ReturnType<typeof fresh>["space"]) {
+		const ask = yield* space.open({ actor: OWNER, kind: "briefing", input: migration });
+		yield* space.reply(ask.id, responded({ point: "1", text: "Why D1?" }), OWNER);
+		return ask;
+	});
+
+	it.effect("opens a briefing with its points numbered", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "briefing", input: migration });
+			expect(ask).toMatchObject({ kind: "briefing", status: "awaiting_human", thread: [] });
+			expect(
+				ask.kind === "briefing" && ask.prompt.sections.map((s) => s.points.map((p) => p.id)),
+			).toEqual([["1", "2"], ["3"]]);
+		}),
+	);
+
+	it.effect("refuses more than fifty points", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const points = Array.from({ length: 51 }, (_, n) => ({ title: `Point ${n}` }));
+			const exit = yield* Effect.exit(
+				space.open({
+					actor: OWNER,
+					kind: "briefing",
+					input: {
+						...migration,
+						sections: [{ points: points.slice(0, 30) }, { points: points.slice(30) }],
+					},
+				}),
+			);
+			expect(failureTag(exit)).toEqual(["ContentInvalid"]);
+		}),
+	);
+
+	it.effect("refuses an image it does not hold, in a point or an answer", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const image = [{ type: "image" as const, uploadId: "nowhere" }];
+			const opened = yield* Effect.exit(
+				space.open({
+					actor: OWNER,
+					kind: "briefing",
+					input: { ...migration, sections: [{ points: [{ title: "See", content: image }] }] },
+				}),
+			);
+			expect(failureTag(opened)).toEqual(["ContentInvalid"]);
+			const ask = yield* owing(space);
+			const answered = yield* Effect.exit(
+				space.answerBriefing({
+					askId: ask.id,
+					answers: [{ point: "1", answer: "See.", points: [{ title: "This", content: image }] }],
+				}),
+			);
+			expect(failureTag(answered)).toEqual(["ContentInvalid"]);
+		}),
+	);
+
+	it.effect(
+		"hands the move to the agent when a reply owes an answer, and back when it is answered",
+		() =>
+			Effect.gen(function* () {
+				const { space } = fresh();
+				const ask = yield* space.open({ actor: OWNER, kind: "briefing", input: migration });
+				const replied = yield* space.reply(
+					ask.id,
+					responded({ point: "1", text: "Why D1?" }, { point: "2", resolved: true }),
+					OWNER,
+				);
+				expect(replied.status).toBe("awaiting_agent");
+				const { ask: answered } = yield* space.answerBriefing({
+					askId: ask.id,
+					answers: [
+						{ point: "1", answer: "Queries.", points: [{ title: "Counting sessions" }] },
+						{ point: "3", answer: "With SHA-256." },
+					],
+				});
+				expect(answered.status).toBe("awaiting_human");
+				expect(
+					answered.thread.map((entry) => (entry.author === "agent" ? entry.point : "human")),
+				).toEqual(["human", "1", "3"]);
+				const [, first] = answered.thread;
+				expect(first?.author === "agent" && first.points).toEqual([
+					{ id: "1.1", title: "Counting sessions" },
+				]);
+			}),
+	);
+
+	it.effect("closes once every point is resolved", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* owing(space);
+			yield* space.answerBriefing({ askId: ask.id, answers: [{ point: "1", answer: "Queries." }] });
+			const closing = responded(
+				{ point: "1", text: "Makes sense", resolved: true },
+				{ point: "2", resolved: true },
+				{ point: "3", resolved: true },
+			);
+			const closed = yield* space.reply(ask.id, closing, OWNER);
+			expect(closed.status).toBe("closed");
+			expect(closed.closedAt).toBeDefined();
+			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({ reply: closing });
+		}),
+	);
+
+	it.effect("refuses a reply with nothing owed that leaves it open", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "briefing", input: migration });
+			const exit = yield* Effect.exit(
+				space.reply(ask.id, responded({ point: "2", resolved: true }), OWNER),
+			);
+			expect(failureTag(exit)).toEqual(["ReplyInvalid"]);
+		}),
+	);
+
+	it.effect("refuses whitespace as words", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "briefing", input: migration });
+			const exit = yield* Effect.exit(
+				space.reply(ask.id, responded({ point: "1", text: "   " }), OWNER),
+			);
+			expect(failureTag(exit)).toEqual(["ReplyInvalid"]);
+		}),
+	);
+
+	it.effect("refuses an answer that leaves out an owed point, naming it", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* owing(space);
+			const exit = yield* Effect.exit(
+				space.answerBriefing({ askId: ask.id, answers: [{ point: "2", answer: "Unasked." }] }),
+			);
+			expect(failureOf(exit)).toMatchObject({
+				_tag: "ContentInvalid",
+				reason: "Answer every point the person wrote on: 1 is missing.",
+			});
+		}),
+	);
+
+	it.effect("records a retried answer once", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* owing(space);
+			const move = {
+				askId: ask.id,
+				answers: [{ point: "1", answer: "Queries.", points: [{ title: "Counting sessions" }] }],
+			};
+			const first = yield* space.answerBriefing(move);
+			const again = yield* space.answerBriefing(move);
+			expect(again.ask.thread).toEqual(first.ask.thread);
+			expect(again.turn).toBe(first.turn);
+		}),
+	);
+
+	it.effect(
+		"rejoins a retried answer once the person has replied again, and hands that reply over",
+		() =>
+			Effect.gen(function* () {
+				const { space } = fresh();
+				const ask = yield* owing(space);
+				const move = {
+					askId: ask.id,
+					answers: [{ point: "1", answer: "Queries.", points: [{ title: "Counting sessions" }] }],
+				};
+				const first = yield* space.answerBriefing(move);
+				yield* space.reply(ask.id, responded({ point: "1", text: "Which queries?" }), OWNER);
+				const again = yield* space.answerBriefing(move);
+				expect(again.turn).toBe(first.turn);
+				expect(again.ask.thread).toHaveLength(first.ask.thread.length + 1);
+				expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({
+					reply: responded({ point: "1", text: "Which queries?" }),
+				});
+			}),
+	);
+
+	it.effect("takes the same answer after a delivered reply for a new move, not a retry", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* owing(space);
+			const move = { askId: ask.id, answers: [{ point: "1", answer: "Queries." }] };
+			yield* space.answerBriefing(move);
+			yield* space.reply(ask.id, responded({ point: "1", text: "Which queries?" }), OWNER);
+			const delivered = yield* space.awaitReply(ask.id, 0);
+			yield* space.markDelivered(ask.id, delivered?.seq ?? 0);
+			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
+			const exit = yield* Effect.exit(space.answerBriefing(move));
+			expect(failureTag(exit)).toEqual(["AskClosed"]);
+		}),
+	);
+
+	it.effect("rejoins a retried answer whose briefing the person then closed", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* owing(space);
+			const move = { askId: ask.id, answers: [{ point: "1", answer: "Queries." }] };
+			const first = yield* space.answerBriefing(move);
+			const closing = responded(
+				{ point: "1", resolved: true },
+				{ point: "2", resolved: true },
+				{ point: "3", resolved: true },
+			);
+			yield* space.reply(ask.id, closing, OWNER);
+			const again = yield* space.answerBriefing(move);
+			expect(again.turn).toBe(first.turn);
+			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({ reply: closing });
+		}),
+	);
+
+	it.effect(
+		"lets the person dismiss it during the agent's move, and refuses the answer after",
+		() =>
+			Effect.gen(function* () {
+				const { space } = fresh();
+				const ask = yield* owing(space);
+				const dismissed = yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
+				expect(dismissed.status).toBe("closed");
+				const exit = yield* Effect.exit(
+					space.answerBriefing({ askId: ask.id, answers: [{ point: "1", answer: "Too late." }] }),
+				);
+				expect(failureTag(exit)).toEqual(["AskClosed"]);
+			}),
+	);
+
+	it.effect("keeps questions and reviews to today's turn rule", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			for (const opening of [
+				{ actor: OWNER, kind: "review", input: copy } as const,
+				{ actor: OWNER, kind: "question", input: colour } as const,
+			]) {
+				const ask = yield* space.open(opening);
+				yield* space.reply(ask.id, { outcome: "follow_up", question: "Why?" }, OWNER);
+				const exit = yield* Effect.exit(space.reply(ask.id, { outcome: "dismissed" }, OWNER));
+				expect(failureTag(exit)).toEqual(["NotYourTurn"]);
+			}
+		}),
+	);
+
+	it.effect("hands over replies the person sent before dismissing, then the dismissal", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* owing(space);
+			yield* space.reply(ask.id, { outcome: "dismissed" }, OWNER);
+			const first = yield* space.awaitReply(ask.id, 0);
+			expect(first).toMatchObject({ reply: responded({ point: "1", text: "Why D1?" }) });
+			yield* space.markDelivered(ask.id, first?.seq ?? 0);
+			expect(yield* space.awaitReply(ask.id, 0)).toMatchObject({ reply: { outcome: "dismissed" } });
+		}),
+	);
+
+	it.effect("refuses a briefing too large to keep, advising it as a briefing", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const huge = "x".repeat(300 * 1024);
+			const refused = yield* Effect.flip(
+				space.open({
+					actor: OWNER,
+					kind: "briefing",
+					input: { ...migration, sections: [{ points: [{ title: "Big", detail: huge }] }] },
+				}),
+			);
+			expect(refused).toMatchObject({
+				_tag: "ContentInvalid",
+				reason: expect.stringMatching(/too large to show.*split it into several briefings/),
+			});
+		}),
+	);
+
+	it.effect("tells the agent answer_briefing is for briefings only", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const ask = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+			const refused = yield* Effect.flip(
+				space.answerBriefing({ askId: ask.id, answers: [{ point: "1", answer: "?" }] }),
+			);
+			expect(refused).toMatchObject({
+				_tag: "ContentInvalid",
+				reason: "This is a question, not a briefing: answer_briefing answers only briefings.",
+			});
+		}),
+	);
+
+	it.effect(
+		"refuses responded on a question, and follow_up and answer_follow_up on a briefing",
+		() =>
+			Effect.gen(function* () {
+				const { space } = fresh();
+				const question = yield* space.open({ actor: OWNER, kind: "question", input: colour });
+				const onQuestion = yield* Effect.exit(
+					space.reply(question.id, responded({ point: "1", text: "?" }), OWNER),
+				);
+				expect(failureTag(onQuestion)).toEqual(["ReplyInvalid"]);
+				const briefing = yield* space.open({ actor: OWNER, kind: "briefing", input: migration });
+				const followUp = yield* Effect.exit(
+					space.reply(briefing.id, { outcome: "follow_up", question: "Why?" }, OWNER),
+				);
+				expect(failureTag(followUp)).toEqual(["ReplyInvalid"]);
+				yield* space.reply(briefing.id, responded({ point: "1", text: "Why D1?" }), OWNER);
+				const answered = yield* Effect.exit(
+					space.answerFollowUp({ askId: briefing.id, answer: "Because." }),
+				);
+				expect(failureTag(answered)).toEqual(["ContentInvalid"]);
+			}),
 	);
 });

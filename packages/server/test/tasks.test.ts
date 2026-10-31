@@ -73,7 +73,7 @@ const rpc = async (
 const call = (name: string, args: Record<string, unknown>, tasks = true) =>
 	rpc(
 		"tools/call",
-		{ name, arguments: name === "answer_follow_up" ? args : { project: "tasks-test", ...args } },
+		{ name, arguments: name.startsWith("answer_") ? args : { project: "tasks-test", ...args } },
 		{ name, tasks },
 	);
 
@@ -191,6 +191,79 @@ describe("background tasks", () => {
 		expect((await poll(followed)).result?.result?.structuredContent).toEqual({
 			askId,
 			reply: { outcome: "approved", note: "Fine" },
+		});
+	});
+
+	it("carry a briefing through answer_briefing", async () => {
+		const started = await call("send_briefing", {
+			title: "Brief me",
+			sections: [{ points: [{ title: "Sessions move to D1" }, { title: "R2 keeps images" }] }],
+		});
+		const opened = started.result?.taskId ?? "";
+		const askId = askOf(opened);
+		await reply(askId, { outcome: "responded", points: [{ point: "2", text: "Which bucket?" }] });
+		const first = (await poll(opened)).result?.result;
+		expect(first?.structuredContent).toMatchObject({ reply: { outcome: "responded" } });
+		expect(JSON.stringify(first?.content)).toContain("Point 2 (R2 keeps images)");
+
+		const answered = await call("answer_briefing", {
+			askId,
+			answers: [{ point: "2", answer: "The images bucket.", points: [{ title: "Named IMAGES" }] }],
+		});
+		const followed = answered.result?.taskId ?? "";
+		expect(followed).toBe(`${askId}:2`);
+		expect((await poll(followed)).result).toMatchObject({ status: "working" });
+
+		await reply(askId, {
+			outcome: "responded",
+			points: [{ point: "2.1", text: "Why that name?" }],
+		});
+		const second = (await poll(followed)).result?.result;
+		expect(JSON.stringify(second?.content)).toContain("Point 2.1 (Named IMAGES)");
+	});
+
+	it("rejoin a retried answer_briefing once the person has replied again", async () => {
+		const started = await call("send_briefing", {
+			title: "Retry me",
+			sections: [{ points: [{ title: "Sessions move to D1" }] }],
+		});
+		const askId = askOf(started.result?.taskId ?? "");
+		await reply(askId, { outcome: "responded", points: [{ point: "1", text: "Why?" }] });
+		await poll(started.result?.taskId ?? "");
+		const move = {
+			askId,
+			answers: [{ point: "1", answer: "Queries.", points: [{ title: "Counting" }] }],
+		};
+		const first = (await call("answer_briefing", move)).result?.taskId ?? "";
+		await reply(askId, { outcome: "responded", points: [{ point: "1.1", text: "Which?" }] });
+		const retried = await call("answer_briefing", move);
+		expect(retried.result?.taskId).toBe(first);
+		expect((await poll(first)).result?.result?.structuredContent).toMatchObject({
+			reply: { outcome: "responded", points: [{ point: "1.1", text: "Which?" }] },
+		});
+		expect((await read(askId)).thread).toHaveLength(3);
+	});
+
+	it("rejoin a retried send_briefing at the agent's latest turn, not its first", async () => {
+		const input = {
+			title: "Rejoin late",
+			sections: [{ points: [{ title: "Sessions move to D1" }] }],
+		};
+		const started = await call("send_briefing", input);
+		const askId = askOf(started.result?.taskId ?? "");
+		await reply(askId, { outcome: "responded", points: [{ point: "1", text: "Why?" }] });
+		await poll(started.result?.taskId ?? "");
+		const answered = await call("answer_briefing", {
+			askId,
+			answers: [{ point: "1", answer: "Queries." }],
+		});
+		await reply(askId, { outcome: "responded", points: [{ point: "1", text: "Which?" }] });
+		const retried = await call("send_briefing", input);
+		expect(retried.result?.taskId).toBe(answered.result?.taskId);
+		expect(
+			(await poll(retried.result?.taskId ?? "")).result?.result?.structuredContent,
+		).toMatchObject({
+			reply: { outcome: "responded", points: [{ point: "1", text: "Which?" }] },
 		});
 	});
 

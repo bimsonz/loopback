@@ -5,7 +5,7 @@ import type { AskRecord, EntryRecord } from "../domain/ask.ts";
 
 interface AskRow {
 	readonly id: string;
-	readonly kind: "question" | "review";
+	readonly kind: AskRecord["kind"];
 	readonly key: string;
 	readonly status: AskStatus;
 	readonly prompt: string;
@@ -39,9 +39,14 @@ const askOf = (row: AskRow): AskRecord => {
 		closedAt: row.closedAt,
 		lastWaitedAt: row.lastWaitedAt,
 	};
-	return row.kind === "question"
-		? { ...head, kind: "question", prompt: JSON.parse(row.prompt) }
-		: { ...head, kind: "review", prompt: JSON.parse(row.prompt), revises: row.revises };
+	switch (row.kind) {
+		case "question":
+			return { ...head, kind: "question", prompt: JSON.parse(row.prompt) };
+		case "review":
+			return { ...head, kind: "review", prompt: JSON.parse(row.prompt), revises: row.revises };
+		case "briefing":
+			return { ...head, kind: "briefing", prompt: JSON.parse(row.prompt) };
+	}
 };
 
 const entryOf = (row: EntryRow): EntryRecord => ({
@@ -64,7 +69,10 @@ export class AskStore extends Context.Service<
 		readonly thread: (id: string) => Effect.Effect<EntryRecord[]>;
 		readonly threads: (ids: readonly string[]) => Effect.Effect<Map<string, EntryRecord[]>>;
 		readonly append: (askId: string, entry: Entry) => Effect.Effect<EntryRecord>;
-		/** The newest human entry not yet handed to an agent. */
+		/**
+		 * The oldest human entry not yet handed to an agent: replies reach it in the order they were
+		 * given, so replies on a briefing are not passed over for a dismissal that followed them.
+		 */
 		readonly undelivered: (askId: string) => Effect.Effect<Option.Option<EntryRecord>>;
 		readonly markDelivered: (askId: string, seq: number, at: string) => Effect.Effect<void>;
 		/** Marks every human entry on the ask as handed to the agent. */
@@ -203,7 +211,7 @@ export class AskStore extends Context.Service<
 					sql<EntryRow>`
 						SELECT ${entryColumns} FROM entries
 						WHERE ask_id = ${askId} AND author = 'human' AND delivered_at IS NULL
-						ORDER BY seq DESC
+						ORDER BY seq
 						LIMIT 1
 					`.pipe(
 						Effect.map((rows) => Option.map(Option.fromNullishOr(rows[0]), entryOf)),
