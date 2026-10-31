@@ -131,6 +131,20 @@ describe("reviewing work", () => {
 	});
 });
 
+describe("an ask the inbox cannot draw", () => {
+	it("says so, keeps the inbox up, and lets the person dismiss it", async () => {
+		const user = userEvent.setup();
+		const broken = { ...review, id: "r9", prompt: { title: "Saved half-way" } } as unknown as Ask;
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		show(broken);
+		expect(screen.getByText(/This ask can't be shown/)).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Dismiss" }));
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0]?.url).toMatch(/\/api\/v1\/asks\/r9\/reply$/);
+		expect(sent[0]?.reply).toEqual({ outcome: "dismissed" });
+	});
+});
+
 describe("moving on", () => {
 	it("tells the inbox once a reply has been sent, and not before", async () => {
 		const user = userEvent.setup();

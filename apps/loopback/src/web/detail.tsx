@@ -10,7 +10,7 @@ import {
 	X,
 } from "@phosphor-icons/react";
 import { Cause, Exit } from "effect";
-import { useEffect, useState } from "react";
+import { Component, type ReactNode, useEffect, useState } from "react";
 import { BriefingBody } from "./briefing.tsx";
 import { Blocks, Prose } from "./content.tsx";
 import { age, SEND_KEY, select, useNow } from "./hooks.ts";
@@ -296,8 +296,80 @@ function Choices({
 	);
 }
 
-/** One ask: what the agent wants, the thread so far, and the moves left. */
 const nothing = () => {};
+
+/** An ask the inbox could not draw, with the one move still open to the person: dismissing it. */
+function CannotShow({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
+	const send = useAtomSet(replyAtom, { mode: "promiseExit" });
+	const [sending, setSending] = useState(false);
+	const [failed, setFailed] = useState<string | null>(null);
+	const dismiss = async () => {
+		setSending(true);
+		setFailed(null);
+		const exit = await send({ askId: ask.id, reply: { outcome: "dismissed" } });
+		setSending(false);
+		if (Exit.isSuccess(exit)) {
+			onReplied();
+			return;
+		}
+		const failure = Cause.squash(exit.cause);
+		setFailed(failure instanceof Error ? failure.message : "no reason given");
+	};
+	return (
+		<article className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:px-8">
+			<Banner
+				variant="error"
+				icon={<WarningCircle />}
+				title="This ask can't be shown"
+				description="It doesn't match what this inbox knows how to draw, perhaps because it was sent while Loopback was being updated. Dismiss it, and the agent can send it again."
+			/>
+			{failed === null ? null : (
+				<Banner
+					role="alert"
+					variant="error"
+					icon={<WarningCircle />}
+					title="It was not dismissed"
+					description={failed}
+				/>
+			)}
+			{ask.status === "closed" ? null : (
+				<Button
+					className="w-fit"
+					variant="ghost"
+					icon={<X />}
+					loading={sending}
+					onClick={() => void dismiss()}
+				>
+					Dismiss
+				</Button>
+			)}
+		</article>
+	);
+}
+
+/** Keeps one ask that cannot be drawn from taking the whole inbox down with it. */
+class Drawable extends Component<
+	{ readonly ask: Ask; readonly onReplied: () => void; readonly children: ReactNode },
+	{ readonly failed: boolean }
+> {
+	override state = { failed: false };
+
+	static getDerivedStateFromError() {
+		return { failed: true };
+	}
+
+	override componentDidCatch(error: unknown) {
+		console.error(`Ask ${this.props.ask.id} could not be shown:`, error);
+	}
+
+	override render() {
+		return this.state.failed ? (
+			<CannotShow ask={this.props.ask} onReplied={this.props.onReplied} />
+		) : (
+			this.props.children
+		);
+	}
+}
 
 export function AskDetail({
 	ask,
@@ -307,6 +379,15 @@ export function AskDetail({
 	/** Called once a reply is sent: the inbox moves on to whatever is next. */
 	readonly onReplied?: () => void;
 }) {
+	return (
+		<Drawable key={ask.id} ask={ask} onReplied={onReplied}>
+			<AskView ask={ask} onReplied={onReplied} />
+		</Drawable>
+	);
+}
+
+/** One ask: what the agent wants, the thread so far, and the moves left. */
+function AskView({ ask, onReplied }: { readonly ask: Ask; readonly onReplied: () => void }) {
 	const now = useNow();
 	const me = useMe();
 	const status = STATUS[ask.status];

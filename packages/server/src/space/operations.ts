@@ -244,6 +244,14 @@ export const open = Effect.fn("Space.open")(function* (request: OpenRequest) {
 			record = { ...head, kind: "briefing", prompt };
 			break;
 		}
+		default: {
+			// A Worker newer than this space can ask for a kind it has never heard of while a deploy
+			// settles: refuse it, rather than keep it as something it is not.
+			const kind = (request as { readonly kind: string }).kind;
+			return yield* new ContentInvalid({
+				reason: `This Loopback space does not know "${kind}" asks yet. If Loopback was just updated, try again in a few minutes.`,
+			});
+		}
 	}
 	yield* store.insert(record);
 	const ask = yield* view(record);

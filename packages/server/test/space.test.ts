@@ -584,6 +584,22 @@ describe("briefings", () => {
 		return ask;
 	});
 
+	it.effect("refuses a kind of ask it does not know, rather than keeping it as another", () =>
+		Effect.gen(function* () {
+			const { space } = fresh();
+			const refused = yield* Effect.flip(
+				space.open({ actor: OWNER, kind: "memo", input: migration } as unknown as Parameters<
+					typeof space.open
+				>[0]),
+			);
+			expect(refused).toMatchObject({
+				_tag: "ContentInvalid",
+				reason: expect.stringMatching(/does not know "memo" asks/),
+			});
+			expect((yield* space.snapshot()).open).toEqual([]);
+		}),
+	);
+
 	it.effect("opens a briefing with its points numbered", () =>
 		Effect.gen(function* () {
 			const { space } = fresh();
