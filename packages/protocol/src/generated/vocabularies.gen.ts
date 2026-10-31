@@ -8,6 +8,6 @@
  * `(typeof X)[number]` keeps working unchanged.
  */
 export const SPEC_VOCABULARIES = {
-	AskKind: ["question", "review"],
+	AskKind: ["question", "review", "briefing"],
 	AskStatus: ["awaiting_human", "awaiting_agent", "closed"],
 } as const;

@@ -426,10 +426,13 @@ export interface Operations<C = unknown> {
 	readonly Asks_list: (ctx: C, input: Fields<z.infer<typeof Asks_listQuery>>) => Awaitable<Asks_listResult>;
 	readonly Asks_read: (ctx: C, input: Fields<z.infer<typeof Asks_readPath>>) => Awaitable<Asks_readResult>;
 	/**
-	 * Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, and with
-	 * 422 when the reply does not fit: `answered` is for questions and needs a choice or text, with
-	 * choices among those offered and only one unless several are allowed; `approved` and
-	 * `changes_requested` are for reviews.
+	 * Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, except that
+	 * a briefing may be dismissed during the agent's turn. Refused with 422 when the reply does not
+	 * fit: `answered` is for questions and needs a choice or text, with choices among those offered
+	 * and only one unless several are allowed; `approved` and `changes_requested` are for reviews;
+	 * `responded` is for briefings, names each of their points at most once with words or resolved,
+	 * and either resolves every point or leaves the agent a point to answer. A briefing takes no
+	 * `follow_up`.
 	 */
 	readonly Asks_reply: (ctx: C, input: Fields<z.infer<typeof Asks_replyPath>> & { reply: z.infer<typeof replySchema> }) => Awaitable<Asks_replyResult>;
 	/** An uploaded image. */

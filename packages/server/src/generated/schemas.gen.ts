@@ -95,7 +95,20 @@ export const dismissedSchema = z.strictObject({
 }).describe("Declined without an answer.");
 export type Dismissed = z.infer<typeof dismissedSchema>;
 
-export const replySchema = z.union([answeredSchema, approvedSchema, changesRequestedSchema, followUpSchema, dismissedSchema]).describe("What a person replies. Every outcome except `follow_up` closes the ask.");
+export const pointReplySchema = z.strictObject({
+	point: z.string().min(1),
+	text: z.string().exactOptional().describe("What they said: a question, a push-back or a comment."),
+	resolved: z.boolean().exactOptional().describe("Whether they are done with the point, and everything beneath it."),
+}).describe("The person on one point of a briefing: words, resolved, or both.");
+export type PointReply = z.infer<typeof pointReplySchema>;
+
+export const respondedSchema = z.strictObject({
+	outcome: z.literal("responded"),
+	points: z.array(pointReplySchema).min(1),
+}).describe("Replies on the points of a briefing. The agent answers every point written on and left unresolved;\nthe briefing closes once every point is resolved.");
+export type Responded = z.infer<typeof respondedSchema>;
+
+export const replySchema = z.union([answeredSchema, approvedSchema, changesRequestedSchema, followUpSchema, dismissedSchema, respondedSchema]).describe("What a person replies. A `follow_up` hands the move to the agent; so does a `responded` that\nleaves any point unresolved. Every other reply closes the ask.");
 export type Reply = z.infer<typeof replySchema>;
 
 export const humanEntrySchema = z.strictObject({
@@ -137,12 +150,22 @@ export type ImageBlock = z.infer<typeof imageBlockSchema>;
 export const blockSchema = z.union([markdownBlockSchema, codeBlockSchema, diffBlockSchema, imageBlockSchema]).describe("One piece of what is shown to the person.");
 export type Block = z.infer<typeof blockSchema>;
 
+export const pointSchema = z.strictObject({
+	id: z.string().describe("`3` for the third point of the briefing, `3.1` for the first beneath it."),
+	title: z.string().min(1).max(200).describe("The point in one line, shown while it is folded."),
+	detail: z.string().exactOptional().describe("The point explained, as markdown, shown when the person opens it."),
+	content: z.array(blockSchema).exactOptional().describe("Anything to look at with it: code, a diff or an image."),
+}).describe("A point of a briefing as it is shown, with the id replies name it by.");
+export type Point = z.infer<typeof pointSchema>;
+
 export const agentEntrySchema = z.strictObject({
 	author: z.literal("agent"),
 	answer: z.string(),
 	content: z.array(blockSchema).exactOptional(),
+	point: z.string().exactOptional().describe("The briefing point this answers."),
+	points: z.array(pointSchema).exactOptional().describe("Sub-points the answer broke the point into, with their ids."),
 	at: z.iso.datetime({ offset: true }),
-}).describe("An answer the agent gave to a question asked back.");
+}).describe("An answer the agent gave: to a question asked back, or on one point of a briefing.");
 export type AgentEntry = z.infer<typeof agentEntrySchema>;
 
 export const entrySchema = z.union([humanEntrySchema, agentEntrySchema]).describe("One turn in an ask's thread after it was opened.");
@@ -188,7 +211,36 @@ export const reviewAskSchema = z.strictObject({
 }).describe("Work an agent put up for review.");
 export type ReviewAsk = z.infer<typeof reviewAskSchema>;
 
-export const askSchema = z.union([questionAskSchema, reviewAskSchema]).describe("Something an agent needs from a person: a short thread that ends with a reply.");
+export const briefingPromptSectionSchema = z.strictObject({
+	title: z.string().exactOptional(),
+	points: z.array(pointSchema),
+}).describe("A list of a briefing's points as it is shown.");
+export type BriefingPromptSection = z.infer<typeof briefingPromptSectionSchema>;
+
+export const briefingPromptSchema = z.strictObject({
+	title: z.string(),
+	summary: z.string().exactOptional(),
+	sections: z.array(briefingPromptSectionSchema),
+}).describe("A briefing as it is shown to the person, before any sub-points the agent adds while answering.");
+export type BriefingPrompt = z.infer<typeof briefingPromptSchema>;
+
+export const briefingAskSchema = z.strictObject({
+	kind: z.literal("briefing"),
+	prompt: briefingPromptSchema,
+	id: z.string(),
+	status: askStatusSchema,
+	waiting: z.boolean().describe("Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."),
+	project: z.string().exactOptional(),
+	client: z.string().exactOptional().describe("The MCP client that asked, such as `claude-code 2.1.0`."),
+	raisedBy: actorSchema.exactOptional().describe("Whose agent asked: the person its credential belongs to, when the deployment knows."),
+	thread: z.array(entrySchema).describe("Every turn after the ask was opened, oldest first."),
+	createdAt: z.iso.datetime({ offset: true }),
+	updatedAt: z.iso.datetime({ offset: true }),
+	closedAt: z.iso.datetime({ offset: true }).exactOptional(),
+}).describe("Points an agent explained, for the person to reply on one at a time.");
+export type BriefingAsk = z.infer<typeof briefingAskSchema>;
+
+export const askSchema = z.union([questionAskSchema, reviewAskSchema, briefingAskSchema]).describe("Something an agent needs from a person: a short thread that ends with a reply.");
 export type Ask = z.infer<typeof askSchema>;
 
 export const snapshotSchema = z.strictObject({
@@ -213,8 +265,21 @@ export const uploadReceiptSchema = z.strictObject({
 }).describe("A stored upload.");
 export type UploadReceipt = z.infer<typeof uploadReceiptSchema>;
 
-export const askKindSchema = z.enum(SPEC_VOCABULARIES.AskKind).describe("What an agent is asking for: an answer to a question, or a verdict on something it produced.");
+export const askKindSchema = z.enum(SPEC_VOCABULARIES.AskKind).describe("What an agent is asking for: an answer to a question, a verdict on something it produced, or the\nperson's word on each point of something it explained.");
 export type AskKind = z.infer<typeof askKindSchema>;
+
+export const briefingPointSchema = z.strictObject({
+	title: z.string().min(1).max(200).describe("The point in one line, shown while it is folded."),
+	detail: z.string().exactOptional().describe("The point explained, as markdown, shown when the person opens it."),
+	content: z.array(blockSchema).exactOptional().describe("Anything to look at with it: code, a diff or an image."),
+}).describe("One point of a briefing: a line the person sees folded, and what opens beneath it.");
+export type BriefingPoint = z.infer<typeof briefingPointSchema>;
+
+export const briefingSectionSchema = z.strictObject({
+	title: z.string().exactOptional(),
+	points: z.array(briefingPointSchema).min(1),
+}).describe("A list of points under an optional heading.");
+export type BriefingSection = z.infer<typeof briefingSectionSchema>;
 
 export const questionInputSchema = z.strictObject({
 	question: z.string().min(1).describe("The question, as markdown."),
@@ -233,6 +298,28 @@ export const reviewInputSchema = z.strictObject({
 	project: z.string().min(1).describe("The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."),
 }).describe("Work put in front of the person for approval or feedback. All of it together may be at most\n256 KiB: show the part that matters, or split it into several reviews.");
 export type ReviewInput = z.infer<typeof reviewInputSchema>;
+
+export const briefingInputSchema = z.strictObject({
+	title: z.string().min(1).max(200),
+	summary: z.string().exactOptional().describe("What this explains, and why, as markdown."),
+	sections: z.array(briefingSectionSchema).min(1).describe("The points, in lists under optional headings."),
+	project: z.string().min(1).describe("The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."),
+}).describe("Something explained as points the person can reply on one at a time: findings, options, steps, a\nlist of changes. They may write on any point, or mark it resolved, and you answer on each point\nthey wrote on until every point is resolved. Points are numbered for you, straight through every\nsection: at most fifty. All of it together may be at most 256 KiB.");
+export type BriefingInput = z.infer<typeof briefingInputSchema>;
+
+export const pointAnswerSchema = z.strictObject({
+	point: z.string().min(1).describe("The point's id, such as `3` or `3.1`."),
+	answer: z.string().min(1).describe("The answer, as markdown."),
+	content: z.array(blockSchema).exactOptional().describe("Anything new to look at alongside the answer."),
+	points: z.array(briefingPointSchema).exactOptional().describe("Sub-points this point breaks into, numbered beneath it (`3.1`, `3.2`, \u2026), each of which the\nperson can reply on in turn. Points go at most three levels deep."),
+}).describe("Your answer on one point of a briefing.");
+export type PointAnswer = z.infer<typeof pointAnswerSchema>;
+
+export const briefingAnswerInputSchema = z.strictObject({
+	askId: z.string().min(1),
+	answers: z.array(pointAnswerSchema).min(1),
+}).describe("Your answers on a briefing, one per point: every point the person wrote on without resolving it,\nand any other open point you have more to say on. All of it together may be at most 256 KiB.");
+export type BriefingAnswerInput = z.infer<typeof briefingAnswerInputSchema>;
 
 export const followUpInputSchema = z.strictObject({
 	askId: z.string().min(1),

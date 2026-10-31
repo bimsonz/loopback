@@ -18,10 +18,14 @@ namespace Loopback;
 
 // --- vocabulary -----------------------------------------------------------------------------------
 
-/** What an agent is asking for: an answer to a question, or a verdict on something it produced. */
+/**
+ * What an agent is asking for: an answer to a question, a verdict on something it produced, or the
+ * person's word on each point of something it explained.
+ */
 enum AskKind {
 	question,
 	review,
+	briefing,
 }
 
 /** Where an ask stands. While it is open, it is either the person's move or the agent's. */
@@ -86,6 +90,24 @@ model Choice {
 	description?: string;
 }
 
+/** One point of a briefing: a line the person sees folded, and what opens beneath it. */
+model BriefingPoint {
+	/** The point in one line, shown while it is folded. */
+	@minLength(1) @maxLength(200) title: string;
+
+	/** The point explained, as markdown, shown when the person opens it. */
+	detail?: string;
+
+	/** Anything to look at with it: code, a diff or an image. */
+	content?: Block[];
+}
+
+/** A list of points under an optional heading. */
+model BriefingSection {
+	title?: string;
+	@minItems(1) points: BriefingPoint[];
+}
+
 // --- what agents send -----------------------------------------------------------------------------
 
 /**
@@ -135,6 +157,56 @@ model ReviewInput {
 	 * person works on many projects at once from one inbox; this is how they know who is asking.
 	 */
 	@minLength(1) project: string;
+}
+
+/**
+ * Something explained as points the person can reply on one at a time: findings, options, steps, a
+ * list of changes. They may write on any point, or mark it resolved, and you answer on each point
+ * they wrote on until every point is resolved. Points are numbered for you, straight through every
+ * section: at most fifty. All of it together may be at most 256 KiB.
+ */
+model BriefingInput {
+	@minLength(1) @maxLength(200) title: string;
+
+	/** What this explains, and why, as markdown. */
+	summary?: string;
+
+	/** The points, in lists under optional headings. */
+	@minItems(1) sections: BriefingSection[];
+
+	/**
+	 * The project you are working in: the name of the folder at the root of its repository (the
+	 * last part of `git rev-parse --show-toplevel`), or of the working directory outside one. The
+	 * person works on many projects at once from one inbox; this is how they know who is asking.
+	 */
+	@minLength(1) project: string;
+}
+
+/** Your answer on one point of a briefing. */
+model PointAnswer {
+	/** The point's id, such as `3` or `3.1`. */
+	@minLength(1) point: string;
+
+	/** The answer, as markdown. */
+	@minLength(1) answer: string;
+
+	/** Anything new to look at alongside the answer. */
+	content?: Block[];
+
+	/**
+	 * Sub-points this point breaks into, numbered beneath it (`3.1`, `3.2`, …), each of which the
+	 * person can reply on in turn. Points go at most three levels deep.
+	 */
+	points?: BriefingPoint[];
+}
+
+/**
+ * Your answers on a briefing, one per point: every point the person wrote on without resolving it,
+ * and any other open point you have more to say on. All of it together may be at most 256 KiB.
+ */
+model BriefingAnswerInput {
+	@minLength(1) askId: string;
+	@minItems(1) answers: PointAnswer[];
 }
 
 /** The agent's answer to a question the person asked back, with its content at most 256 KiB. */
@@ -210,13 +282,37 @@ model Dismissed {
 	outcome: "dismissed";
 }
 
-/** What a person replies. Every outcome except `follow_up` closes the ask. */
+/** The person on one point of a briefing: words, resolved, or both. */
+model PointReply {
+	@minLength(1) point: string;
+
+	/** What they said: a question, a push-back or a comment. */
+	text?: string;
+
+	/** Whether they are done with the point, and everything beneath it. */
+	resolved?: boolean;
+}
+
+/**
+ * Replies on the points of a briefing. The agent answers every point written on and left unresolved;
+ * the briefing closes once every point is resolved.
+ */
+model Responded {
+	outcome: "responded";
+	@minItems(1) points: PointReply[];
+}
+
+/**
+ * What a person replies. A `follow_up` hands the move to the agent; so does a `responded` that
+ * leaves any point unresolved. Every other reply closes the ask.
+ */
 union Reply {
 	answered: Answered,
 	approved: Approved,
 	changes_requested: ChangesRequested,
 	follow_up: FollowUp,
 	dismissed: Dismissed,
+	responded: Responded,
 }
 
 // --- asks -----------------------------------------------------------------------------------------
@@ -234,6 +330,27 @@ model ReviewPrompt {
 	title: string;
 	content: Block[];
 	summary?: string;
+}
+
+/** A point of a briefing as it is shown, with the id replies name it by. */
+model Point {
+	/** `3` for the third point of the briefing, `3.1` for the first beneath it. */
+	id: string;
+
+	...BriefingPoint;
+}
+
+/** A list of a briefing's points as it is shown. */
+model BriefingPromptSection {
+	title?: string;
+	points: Point[];
+}
+
+/** A briefing as it is shown to the person, before any sub-points the agent adds while answering. */
+model BriefingPrompt {
+	title: string;
+	summary?: string;
+	sections: BriefingPromptSection[];
 }
 
 /** Someone a deployment's gate recognised: a person, or the agent they authorised. */
@@ -256,11 +373,18 @@ model HumanEntry {
 	at: utcDateTime;
 }
 
-/** An answer the agent gave to a question asked back. */
+/** An answer the agent gave: to a question asked back, or on one point of a briefing. */
 model AgentEntry {
 	author: "agent";
 	answer: string;
 	content?: Block[];
+
+	/** The briefing point this answers. */
+	point?: string;
+
+	/** Sub-points the answer broke the point into, with their ids. */
+	points?: Point[];
+
 	at: utcDateTime;
 }
 
@@ -312,10 +436,18 @@ model ReviewAsk {
 	...AskCommon;
 }
 
+/** Points an agent explained, for the person to reply on one at a time. */
+model BriefingAsk {
+	kind: "briefing";
+	prompt: BriefingPrompt;
+	...AskCommon;
+}
+
 /** Something an agent needs from a person: a short thread that ends with a reply. */
 union Ask {
 	question: QuestionAsk,
 	review: ReviewAsk,
+	briefing: BriefingAsk,
 }
 
 /** What a blocking MCP tool returns: the reply that ended its wait. */
@@ -467,10 +599,13 @@ interface Asks {
 	@get read(@path id: string): Ask | NotFound | Unauthorized;
 
 	/**
-	 * Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, and with
-	 * 422 when the reply does not fit: `answered` is for questions and needs a choice or text, with
-	 * choices among those offered and only one unless several are allowed; `approved` and
-	 * `changes_requested` are for reviews.
+	 * Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, except that
+	 * a briefing may be dismissed during the agent's turn. Refused with 422 when the reply does not
+	 * fit: `answered` is for questions and needs a choice or text, with choices among those offered
+	 * and only one unless several are allowed; `approved` and `changes_requested` are for reviews;
+	 * `responded` is for briefings, names each of their points at most once with words or resolved,
+	 * and either resolves every point or leaves the agent a point to answer. A briefing takes no
+	 * `follow_up`.
 	 */
 	@route("/{id}/reply")
 	@post

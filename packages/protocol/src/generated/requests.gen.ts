@@ -70,7 +70,18 @@ export interface Dismissed {
 	outcome: "dismissed";
 }
 
-export type Reply = Answered | Approved | ChangesRequested | FollowUp | Dismissed;
+export interface PointReply {
+	point: string;
+	text?: string;
+	resolved?: boolean;
+}
+
+export interface Responded {
+	outcome: "responded";
+	points: PointReply[];
+}
+
+export type Reply = Answered | Approved | ChangesRequested | FollowUp | Dismissed | Responded;
 
 export interface Actor {
 	id: string;
@@ -139,10 +150,19 @@ export interface ImageBlock {
 
 export type Block = MarkdownBlock | CodeBlock | DiffBlock | ImageBlock;
 
+export interface Point {
+	id: string;
+	title: string;
+	detail?: string;
+	content?: Block[];
+}
+
 export interface AgentEntry {
 	author: "agent";
 	answer: string;
 	content?: Block[];
+	point?: string;
+	points?: Point[];
 	at: string;
 }
 
@@ -185,7 +205,33 @@ export interface ReviewAsk {
 	closedAt?: string;
 }
 
-export type Ask = QuestionAsk | ReviewAsk;
+export interface BriefingPromptSection {
+	title?: string;
+	points: Point[];
+}
+
+export interface BriefingPrompt {
+	title: string;
+	summary?: string;
+	sections: BriefingPromptSection[];
+}
+
+export interface BriefingAsk {
+	kind: "briefing";
+	prompt: BriefingPrompt;
+	id: string;
+	status: AskStatus;
+	waiting: boolean;
+	project?: string;
+	client?: string;
+	raisedBy?: Actor;
+	thread: Entry[];
+	createdAt: string;
+	updatedAt: string;
+	closedAt?: string;
+}
+
+export type Ask = QuestionAsk | ReviewAsk | BriefingAsk;
 
 export interface Snapshot {
 	open: Ask[];
@@ -205,7 +251,18 @@ export interface UploadReceipt {
 	size: number;
 }
 
-export type AskKind = "question" | "review";
+export type AskKind = "question" | "review" | "briefing";
+
+export interface BriefingPoint {
+	title: string;
+	detail?: string;
+	content?: Block[];
+}
+
+export interface BriefingSection {
+	title?: string;
+	points: BriefingPoint[];
+}
 
 export interface QuestionInput {
 	question: string;
@@ -221,6 +278,25 @@ export interface ReviewInput {
 	summary?: string;
 	revises?: string;
 	project: string;
+}
+
+export interface BriefingInput {
+	title: string;
+	summary?: string;
+	sections: BriefingSection[];
+	project: string;
+}
+
+export interface PointAnswer {
+	point: string;
+	answer: string;
+	content?: Block[];
+	points?: BriefingPoint[];
+}
+
+export interface BriefingAnswerInput {
+	askId: string;
+	answers: PointAnswer[];
 }
 
 export interface FollowUpInput {

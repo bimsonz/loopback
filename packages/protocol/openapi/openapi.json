@@ -120,7 +120,7 @@
     "/asks/{id}/reply": {
       "post": {
         "operationId": "Asks_reply",
-        "description": "Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, and with\n422 when the reply does not fit: `answered` is for questions and needs a choice or text, with\nchoices among those offered and only one unless several are allowed; `approved` and\n`changes_requested` are for reviews.",
+        "description": "Reply to an ask. Refused with 409 when the ask is closed or it is the agent's turn, except that\na briefing may be dismissed during the agent's turn. Refused with 422 when the reply does not\nfit: `answered` is for questions and needs a choice or text, with choices among those offered\nand only one unless several are allowed; `approved` and `changes_requested` are for reviews;\n`responded` is for briefings, names each of their points at most once with words or resolved,\nand either resolves every point or leaves the agent a point to answer. A briefing takes no\n`follow_up`.",
         "parameters": [
           {
             "name": "id",
@@ -505,6 +505,17 @@
               "$ref": "#/components/schemas/Block"
             }
           },
+          "point": {
+            "type": "string",
+            "description": "The briefing point this answers."
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "description": "Sub-points the answer broke the point into, with their ids."
+          },
           "at": {
             "type": "string",
             "format": "date-time"
@@ -513,7 +524,7 @@
         "unevaluatedProperties": {
           "not": {}
         },
-        "description": "An answer the agent gave to a question asked back."
+        "description": "An answer the agent gave: to a question asked back, or on one point of a briefing."
       },
       "Answered": {
         "type": "object",
@@ -571,6 +582,9 @@
           },
           {
             "$ref": "#/components/schemas/ReviewAsk"
+          },
+          {
+            "$ref": "#/components/schemas/BriefingAsk"
           }
         ],
         "description": "Something an agent needs from a person: a short thread that ends with a reply."
@@ -659,9 +673,10 @@
         "type": "string",
         "enum": [
           "question",
-          "review"
+          "review",
+          "briefing"
         ],
-        "description": "What an agent is asking for: an answer to a question, or a verdict on something it produced."
+        "description": "What an agent is asking for: an answer to a question, a verdict on something it produced, or the\nperson's word on each point of something it explained."
       },
       "AskPage": {
         "type": "object",
@@ -711,6 +726,231 @@
           }
         ],
         "description": "One piece of what is shown to the person."
+      },
+      "BriefingAnswerInput": {
+        "type": "object",
+        "required": [
+          "askId",
+          "answers"
+        ],
+        "properties": {
+          "askId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PointAnswer"
+            },
+            "minItems": 1
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Your answers on a briefing, one per point: every point the person wrote on without resolving it,\nand any other open point you have more to say on. All of it together may be at most 256 KiB."
+      },
+      "BriefingAsk": {
+        "type": "object",
+        "required": [
+          "kind",
+          "prompt",
+          "id",
+          "status",
+          "waiting",
+          "thread",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "briefing"
+            ]
+          },
+          "prompt": {
+            "$ref": "#/components/schemas/BriefingPrompt"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AskStatus"
+          },
+          "waiting": {
+            "type": "boolean",
+            "description": "Whether an agent is following this ask right now: waiting on its call, or polling it as a background task."
+          },
+          "project": {
+            "type": "string"
+          },
+          "client": {
+            "type": "string",
+            "description": "The MCP client that asked, such as `claude-code 2.1.0`."
+          },
+          "raisedBy": {
+            "$ref": "#/components/schemas/Actor",
+            "description": "Whose agent asked: the person its credential belongs to, when the deployment knows."
+          },
+          "thread": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "description": "Every turn after the ask was opened, oldest first."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Points an agent explained, for the person to reply on one at a time."
+      },
+      "BriefingInput": {
+        "type": "object",
+        "required": [
+          "title",
+          "sections",
+          "project"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "description": "What this explains, and why, as markdown."
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BriefingSection"
+            },
+            "minItems": 1,
+            "description": "The points, in lists under optional headings."
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The project you are working in: the name of the folder at the root of its repository (the\nlast part of `git rev-parse --show-toplevel`), or of the working directory outside one. The\nperson works on many projects at once from one inbox; this is how they know who is asking."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Something explained as points the person can reply on one at a time: findings, options, steps, a\nlist of changes. They may write on any point, or mark it resolved, and you answer on each point\nthey wrote on until every point is resolved. Points are numbered for you, straight through every\nsection: at most fifty. All of it together may be at most 256 KiB."
+      },
+      "BriefingPoint": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The point in one line, shown while it is folded."
+          },
+          "detail": {
+            "type": "string",
+            "description": "The point explained, as markdown, shown when the person opens it."
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "description": "Anything to look at with it: code, a diff or an image."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "One point of a briefing: a line the person sees folded, and what opens beneath it."
+      },
+      "BriefingPrompt": {
+        "type": "object",
+        "required": [
+          "title",
+          "sections"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BriefingPromptSection"
+            }
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A briefing as it is shown to the person, before any sub-points the agent adds while answering."
+      },
+      "BriefingPromptSection": {
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            }
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A list of a briefing's points as it is shown."
+      },
+      "BriefingSection": {
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BriefingPoint"
+            },
+            "minItems": 1
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A list of points under an optional heading."
       },
       "ChangesRequested": {
         "type": "object",
@@ -1030,6 +1270,101 @@
         },
         "description": "Prose, copy or a plan, as GitHub-flavoured markdown."
       },
+      "Point": {
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "`3` for the third point of the briefing, `3.1` for the first beneath it."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The point in one line, shown while it is folded."
+          },
+          "detail": {
+            "type": "string",
+            "description": "The point explained, as markdown, shown when the person opens it."
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "description": "Anything to look at with it: code, a diff or an image."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "A point of a briefing as it is shown, with the id replies name it by."
+      },
+      "PointAnswer": {
+        "type": "object",
+        "required": [
+          "point",
+          "answer"
+        ],
+        "properties": {
+          "point": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The point's id, such as `3` or `3.1`."
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The answer, as markdown."
+          },
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "description": "Anything new to look at alongside the answer."
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BriefingPoint"
+            },
+            "description": "Sub-points this point breaks into, numbered beneath it (`3.1`, `3.2`, …), each of which the\nperson can reply on in turn. Points go at most three levels deep."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Your answer on one point of a briefing."
+      },
+      "PointReply": {
+        "type": "object",
+        "required": [
+          "point"
+        ],
+        "properties": {
+          "point": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "What they said: a question, a push-back or a comment."
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "Whether they are done with the point, and everything beneath it."
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "The person on one point of a briefing: words, resolved, or both."
+      },
       "Problem": {
         "type": "object",
         "required": [
@@ -1203,9 +1538,38 @@
           },
           {
             "$ref": "#/components/schemas/Dismissed"
+          },
+          {
+            "$ref": "#/components/schemas/Responded"
           }
         ],
-        "description": "What a person replies. Every outcome except `follow_up` closes the ask."
+        "description": "What a person replies. A `follow_up` hands the move to the agent; so does a `responded` that\nleaves any point unresolved. Every other reply closes the ask."
+      },
+      "Responded": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "points"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "responded"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PointReply"
+            },
+            "minItems": 1
+          }
+        },
+        "unevaluatedProperties": {
+          "not": {}
+        },
+        "description": "Replies on the points of a briefing. The agent answers every point written on and left unresolved;\nthe briefing closes once every point is resolved."
       },
       "ReviewAsk": {
         "type": "object",
