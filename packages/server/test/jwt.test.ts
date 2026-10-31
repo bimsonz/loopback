@@ -149,6 +149,14 @@ describe("a JWT-gated deployment", () => {
 		}
 	});
 
+	it("opens the space for a person whose token carries no usable name, naming them by id", async () => {
+		for (const name of ["", "   ", 42]) {
+			const response = await call(app, "/api/v1/whoami", { bearer: await token({ name }) });
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ space: "acme", actor: { id: "person-1" } });
+		}
+	});
+
 	it("refuses a token that names no space or no person, never opening a default one", async () => {
 		for (const bearer of [
 			await token({ workspace: undefined }),

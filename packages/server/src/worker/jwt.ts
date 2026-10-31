@@ -33,8 +33,11 @@ export interface JwtGateOptions {
 const caller = z.object({
 	sub: z.string().min(1),
 	space: z.string().min(1),
-	name: z.string().min(1).optional(),
 });
+
+/** The caller's display name, when the token carries a usable one; it never decides access. */
+const nameOf = (claim: unknown): string | undefined =>
+	typeof claim === "string" && claim.trim() !== "" ? claim : undefined;
 
 /** The signature algorithms a token may use. `none` and the HMAC family are never among them. */
 const ALGORITHMS = ["EdDSA", "ES256", "RS256"];
@@ -94,14 +97,14 @@ export const makeJwtGate = (options: JwtGateOptions): Gate["Service"] => {
 			const parsed = caller.safeParse({
 				sub: verified.payload.sub,
 				space: verified.payload[options.spaceClaim],
-				name: verified.payload[nameClaim],
 			});
 			if (!parsed.success) {
 				return yield* new Unauthorized({
 					reason: `The token must name a person in \`sub\` and a space in \`${options.spaceClaim}\`.`,
 				});
 			}
-			const { sub, space, name } = parsed.data;
+			const { sub, space } = parsed.data;
+			const name = nameOf(verified.payload[nameClaim]);
 			const access: Access = { space, actor: name === undefined ? { id: sub } : { id: sub, name } };
 			if (options.check !== undefined) {
 				const check = options.check;
